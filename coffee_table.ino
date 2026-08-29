@@ -1,107 +1,75 @@
+/**
+ * @file coffee_table.ino
+ * @brief Master Orchestration Skeleton for the Coffee Table Locomotive Controller.
+ * 
+ * This file serves as the clean C++ execution entry point. Following advanced
+ * encapsulation guidelines, all local implementation variables have been shifted
+ * out of this file pool and into their respective tab modules. This skeleton strictly
+ * handles global data models, core setup triggers, and cyclic loop scheduling.
+ */
+
 #include <WiFi.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <WiFiManager.h>
-#include <Preferences.h> 
 
-// Hardware configuration and pinouts
-const int SPEED_PIN = 4;   
-const int DIR_PIN   = 5;   
-const int IR_PIN    = 3;   
-const int RED_LED   = 0;   
-const int GREEN_LED = 1;   
-const int LED_PIN   = 8;   
+// 1. Include the unified configuration data structure definition tab first
+#include "ct_persistence.h"
+// Include remaining layout modules (Ordering satisfies linking dependencies)
+#include "ct_index.h"
+#include "ct_automation.h" 
+#include "ct_hardware.h"   
+#include "ct_server.h"     
 
-// Speed and momentum tracking variables
-int targetPercent  = 0;    
-int targetSpeed    = 0;    
-int storedRunSpeed = 0;    
-int currentSpeed   = 0;    
-bool isForward     = true; 
-bool ledState      = false; 
 
-// Dynamic LED configuration vectors
-bool isLedInNetworkMode = false; 
-unsigned long lastLedBlinkTime = 0;
-const unsigned long ledBlinkInterval = 250; 
+// Instantiate the single, global, volatile system configuration object model
+// These values serve as running system variables and fallback memory defaults
+volatile TrainConfig config = {
+  15,    // rampInterval: Delay between speed adjustments (ms)
+  2,     // rampStep: Velocity increment/decrement step size
+  4000,  // stationWaitDuration: Platform dwell time at station standstill (ms)
+  5000,  // irCooldown: Optical occupancy sensor dead-time filter window (ms)
+  false  // isLedInNetworkMode: LED pin allocation flag (Browser vs. Network Watchdog)
+};
 
-volatile unsigned long rampInterval = 15; 
-volatile int rampStep               = 2;  
+// Global Network Watchdog Timing Thresholds (Shared via ct_server.h/ct_hardware.h)
+unsigned long trackingTimeLimit       = 300000; // 5 Minutes tracking window limit
+unsigned long connectionCheckInterval = 60000;  // 1 Minute cyclic connection check interval
 
-// Automation and state machine settings
-enum TrainState { RUNNING, STOPPING, WAITING_AT_STATION };
-TrainState currentState = RUNNING;
-
-unsigned long lastRampTime       = 0;
-unsigned long stationTimerStart  = 0;
-unsigned long lastIRTriggerTime  = 0;
-
-volatile unsigned long stationWaitDuration = 4000; 
-volatile unsigned long irCooldown          = 5000; 
-
-// Automated reconnect tracking registers
-unsigned long disconnectWindowStart   = 0; 
-int disconnectCounter                 = 0;
-const int maxDisconnectAllowed        = 5; 
-const unsigned long trackingTimeLimit = 300000; 
-
-// Connection Check Timing Registers
-unsigned long lastConnectionCheckTime      = 0;
-const unsigned long connectionCheckInterval = 60000; 
-
-// Interlocking software mutex flag to prevent race conditions
+// Interlocking multi-core software mutex flag to prevent async reconnect races
 volatile bool isProcessingDisconnect = false; 
 
-AsyncWebServer server(80); 
-Preferences prefs;
+// REMOVED: AsyncWebServer server(80); -> Completely deleted from here.
+// It is now fully encapsulated inside the top of ct_server.cpp!
 
-// Include project header modules
-#include "index.h"
-#include "js.h"
-#include "hardware.h"
-#include "automation.h"
-#include "network.h"
 
+// Instantiate the master tracking variable for the station loop state machine
+TrainState currentState = RUNNING;
+
+/**
+ * @brief Primary hardware boot and module initialization loop.
+ */
 void setup() {
   Serial.begin(115200);
   delay(3000); 
-  Serial.printf("[%lu ms] Microcontroller booting up...\n", millis());
+  Serial.printf("[%lu ms] System Initialization: Booting clean firmware framework...\n", millis());
 
-  pinMode(LED_PIN, OUTPUT);
-  loadPhysicsFromFlash();
-  
-  if(!isLedInNetworkMode) {
-    digitalWrite(LED_PIN, ledState ? LOW : HIGH); 
-  }
+  // Invoke unified hardware routine (Configures 20kHz PWM pins, pulls flash bytes)
+  initHardware();
 
-  WiFi.onEvent(WiFiEvent);
-
-  pinMode(SPEED_PIN, OUTPUT);
-  pinMode(DIR_PIN, OUTPUT);
-  pinMode(IR_PIN, INPUT_PULLUP); 
-  pinMode(RED_LED, OUTPUT);
-  pinMode(GREEN_LED, OUTPUT);
-  
-  applyTrackPower(); 
-  updateSignalAspect(true); 
-
-  WiFi.mode(WIFI_STA); 
-  WiFi.setHostname("Z-Scale-Throttle"); 
-
-  WiFiManager wm;
-  if (!wm.autoConnect("Coffee-Table-Z-Train")) {
-    delay(3000);
-    ESP.restart();
-  }
-
-  Serial.printf("[%lu ms] Network ready. Managed via Pi-hole DNS allocation.\n", millis());
-  setupWebServer();
+  // Invoke unified network routine (Binds WiFiManager captive portals and HTTP routes)
+  initServer();
 }
 
+/**
+ * @brief Continuous cyclic background scheduling loop.
+ * Runs millions of times per second with zero thread locks or raw delays.
+ */
 void loop() {
   unsigned long currentTime = millis();
-  processConnectionCheck(currentTime);
-  processAutomation(currentTime);
-  processMomentum(currentTime);
-  processLedBlinking(currentTime); 
+  
+  processConnectionCheck(currentTime); // Tracks Wi-Fi connectivity states (Server tab)
+  processAutomation(currentTime);      // Evaluates station sensor logic (Automation tab)
+  processMomentum(currentTime);        // Computes speed adjustments (Automation tab)
+  processLedBlinking(currentTime);     // Runs status indicator pulses (Hardware tab)
 }
