@@ -11,6 +11,7 @@
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
 #include <WiFiManager.h>
+#include <esp_task_wdt.h>
 #include "ct_server.h"
 #include "ct_hardware.h"
 #include "ct_persistence.h"
@@ -53,12 +54,16 @@ void initServer() {
   // Provision credentials safely via on-demand captive runtime configuration hotspot
   WiFiManager wm;
   if (!wm.autoConnect("Coffee-Table-Train")) {
-    delay(3000);
-    ESP.restart();
+    setOLEDLine1("NET FAIL");
+    
+    // CALL YOUR CLEAN HARDWARE RESET HERE
+    softwareReset(); // Guarantees a physical master hardware reboot to retry fresh!
   }
 
-  Serial.print("Successfully connected! IP Address: ");
+  Serial.printf("[%lu ms] Network ready. IP Address: ", millis());
   Serial.println(WiFi.localIP());
+
+  setOLEDLine1("ONLINE");
 
   // Dashboard landing payload streaming endpoint (RAM-safe flash streaming)
   server.on("/", WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
@@ -70,13 +75,12 @@ void initServer() {
   // Structural Handshake API response target endpoint
   server.on("/status", WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     TrainConfig snap;
-    snap.isLedInNetworkMode   = config.isLedInNetworkMode;
     snap.rampStep             = config.rampStep;
     snap.rampInterval         = config.rampInterval;
     snap.stationWaitDuration  = config.stationWaitDuration;
     snap.irCooldown           = config.irCooldown;
     String json = "{";
-    json += "\"ledMode\":" + String(snap.isLedInNetworkMode ? 1 : 0) + ",";
+    json += "\"ledState\":" + String(ledState ? 1 : 0) + ",";
     json += "\"dir\":\"" + String(isForward ? "forward" : "reverse") + "\",";
     json += "\"step\":" + String(snap.rampStep) + ",";
     json += "\"interval\":" + String(snap.rampInterval) + ",";
@@ -94,22 +98,9 @@ void initServer() {
   });
 
   server.on("/setled", WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
-    if (!config.isLedInNetworkMode && request->hasArg("state")) {
       ledState = (request->arg("state").toInt() == 1);
       digitalWrite(LED_PIN, ledState ? LOW : HIGH);
-    }
     request->send(200, "text/plain", "LED Updated");
-  });
-
-  server.on("/setledmode", WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
-    if (request->hasArg("network")) {
-      config.isLedInNetworkMode = (request->arg("network").toInt() == 1);
-      
-      if(!config.isLedInNetworkMode) {
-        digitalWrite(LED_PIN, ledState ? LOW : HIGH);
-      }
-    }
-    request->send(200, "text/plain", "LED Mode Synchronized");
   });
 
   server.on("/start", WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
@@ -170,12 +161,22 @@ void initServer() {
 void processConnectionCheck(unsigned long currentTime) {
   if (currentTime - lastConnectionCheckTime >= connectionCheckInterval) {
     lastConnectionCheckTime = currentTime;
-    if (WiFi.status() != WL_CONNECTED && !isProcessingDisconnect) {
+    
+    if (WiFi.status() != WL_CONNECTED) {
       Serial.printf("[%lu ms] Network connection broken! Triggering automated reconnect...\n", currentTime);
+      setOLEDLine1("DISCONN");
+      
+      // FIX: Force handleNetworkDisconnections to execute even if the flag was true,
+      // allowing our 1-minute loop to continuously issue new retry attempts!
       handleNetworkDisconnections(currentTime);
+    } else {
+      // If we are connected, ensure the safety interlock flag is lowered
+      isProcessingDisconnect = false;
+      disconnectCounter = 0;
     }
   }
 }
+
 
 /**
  * @brief Commands radio driver to re-associate. Forces safety reboot if instability limit hits.
@@ -194,10 +195,12 @@ void handleNetworkDisconnections(unsigned long currentTime) {
     disconnectWindowStart = currentTime;
   }
   
-  if (disconnectCounter >= maxDisconnectAllowed) {
-    Serial.printf("[%lu ms] Critical network instability detected (%d drops). Resetting chip...\n", millis(), disconnectCounter);
-    delay(1000);
-    ESP.restart();
+if (disconnectCounter >= maxDisconnectAllowed) {
+  
+    Serial.printf("[%lu ms] SERVER WATCHDOG PANIC: Network unstable (%d drops). Resetting...\n", millis(), disconnectCounter);
+    setOLEDLine1("NET WDT");
+    // CALL YOUR NEW RECOVERY RESET HERE
+    softwareReset(); // Guarantees a clean, un-stalleable master hardware reboot!
   }
 }
 
@@ -211,10 +214,12 @@ void WiFiEvent(WiFiEvent_t event) {
       Serial.printf("[%lu ms] Obtained stable IP: ", now);
       Serial.println(WiFi.localIP());
       isProcessingDisconnect = false;
+      setOLEDLine1("ONLINE");
       break;
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
       if (!isProcessingDisconnect) {
         Serial.printf("[%lu ms] Asynchronous hardware drop frame. Triggering recovery...\n", now);
+        setOLEDLine1("LINK LOST");
         handleNetworkDisconnections(now);
       }
       break;
@@ -228,4 +233,32 @@ void WiFiEvent(WiFiEvent_t event) {
  */
 bool isNetworkLinkStable() {
   return (WiFi.status() == WL_CONNECTED && !isProcessingDisconnect);
+}
+
+
+/**
+ * @brief Guaranteed Hardware Watchdog Reset
+ * Forces an un-kickable infinite loop that triggers a true hardware silicon reset.
+ */
+void softwareReset() {
+  Serial.println("[Watchdog] Forcing urgent hardware-level master reset...");
+  delay(500); // Give the OLED screen a brief window to flush its current text pixels
+
+  // Define a fast 1-second (1000ms) hardware timeout configuration
+  esp_task_wdt_config_t reset_config = {
+    .timeout_ms = 1000,         // Wait exactly 1 second before firing the reset panic
+    .idle_core_mask = (1 << 0), // Target the main core
+    .trigger_panic = true       // Enable physical hardware panic reset
+  };
+
+  // Forcefully reconfigure the system watchdog to use this fast 1-second timeout
+  esp_task_wdt_reconfigure(&reset_config);
+  esp_task_wdt_add(NULL); // Subscribe this immediate thread context to the watchdog
+
+  // Disable all software interrupts and enter an un-kickable infinite loop
+  portDISABLE_INTERRUPTS();
+  while (true) {
+    // Stalls right here. Because loop is locked, the hardware timer will panic 
+    // and force a true, absolute electrical reset in exactly 1000 milliseconds.
+  }
 }

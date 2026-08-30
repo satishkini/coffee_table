@@ -6,12 +6,19 @@
 #define IR_PIN    3   
 #define LED_PIN   8   
 
+// Dedicated I2C Bus Overrides
+#define I2C_SDA_PIN 1
+#define I2C_SCL_PIN 2
+
 extern unsigned long trackingTimeLimit;
 extern unsigned long connectionCheckInterval;
 
+void initHardware();
 void applyTrackPower();
 bool readIRSensor(); // Returns true if the sensor beam is broken / track is occupied
-void processLedBlinking(unsigned long currentTime);
-void initHardware();
+
+void setOLEDLine1(const char* text);
+void setOLEDLine2(const char* text);
+void processOLEDBacklightUptime(unsigned long currentTime);
 
 #endif

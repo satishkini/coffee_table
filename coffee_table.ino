@@ -12,6 +12,7 @@
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <WiFiManager.h>
+#include <esp_task_wdt.h>
 
 // 1. Include the unified configuration data structure definition tab first
 #include "ct_persistence.h"
@@ -28,8 +29,7 @@ volatile TrainConfig config = {
   15,    // rampInterval: Delay between speed adjustments (ms)
   2,     // rampStep: Velocity increment/decrement step size
   4000,  // stationWaitDuration: Platform dwell time at station standstill (ms)
-  5000,  // irCooldown: Optical occupancy sensor dead-time filter window (ms)
-  false  // isLedInNetworkMode: LED pin allocation flag (Browser vs. Network Watchdog)
+  5000  // irCooldown: Optical occupancy sensor dead-time filter window (ms)
 };
 
 // Global Network Watchdog Timing Thresholds (Shared via ct_server.h/ct_hardware.h)
@@ -54,10 +54,18 @@ void setup() {
   delay(3000); 
   Serial.printf("[%lu ms] System Initialization: Booting clean firmware framework...\n", millis());
 
-  // Invoke unified hardware routine (Configures 20kHz PWM pins, pulls flash bytes)
+  // --- 1. INITIALIZE GENERAL HARDWARE SYSTEM WATCHDOG ---
+  // If the main train loop freezes for more than 4 seconds, the silicon forces a hard reboot.
+/*  esp_task_wdt_config_t twdt_config = {
+    .timeout_ms = 4000,          // 4-Second panic threshold window
+    .idle_core_mask = (1 << 0),  // Target Core 0 (ESP32-C3 is single-core)
+    .trigger_panic = true        // Force immediate physical silicon reset on timeout
+  };
+  esp_task_wdt_reconfigure(&twdt_config); // Apply configurations to the hardware registers
+  esp_task_wdt_add(NULL);                 // Subscribe this primary main thread loop to the watchdog tracker
+*/
+  // 2. Initialize secondary modular subsystems
   initHardware();
-
-  // Invoke unified network routine (Binds WiFiManager captive portals and HTTP routes)
   initServer();
 }
 
@@ -67,9 +75,9 @@ void setup() {
  */
 void loop() {
   unsigned long currentTime = millis();
-  
+  //esp_task_wdt_reset(); 
   processConnectionCheck(currentTime); // Tracks Wi-Fi connectivity states (Server tab)
   processAutomation(currentTime);      // Evaluates station sensor logic (Automation tab)
   processMomentum(currentTime);        // Computes speed adjustments (Automation tab)
-  processLedBlinking(currentTime);     // Runs status indicator pulses (Hardware tab)
+  processOLEDBacklightUptime(currentTime); 
 }
