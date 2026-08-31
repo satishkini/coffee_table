@@ -11,10 +11,10 @@
 
 // Networking Interface Prototypes
 void initServer(); 
+void bootConfigPortal();
 void processConnectionCheck(unsigned long currentTime);
 void WiFiEvent(WiFiEvent_t event);
 void handleNetworkDisconnections(unsigned long currentTime);
 bool isNetworkLinkStable();
-void softwareReset();
 
 #endif

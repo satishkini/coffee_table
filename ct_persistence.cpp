@@ -25,6 +25,13 @@ void loadTrainConfigFromFlash() {
     Serial.println("[Flash Layer] Structural system parameters successfully loaded.");
   } else {
     Serial.println("[Flash Layer] No saved configurations found. Using active structural defaults.");
+    config.rampInterval        = 15;
+    config.rampStep            = 2;
+    config.stationWaitDuration = 4000;
+    config.irCooldown          = 5000;
+
+    memset((void*)config.wifiSSID, 0, sizeof(config.wifiSSID));
+    memset((void*)config.wifiPASS, 0, sizeof(config.wifiPASS));
   }
   
   prefs.end();

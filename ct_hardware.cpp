@@ -23,7 +23,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 static char cacheLine1[11] = "STARTING  ";
 static char cacheLine2[11] = "          "; 
 
-volatile bool ledState = false ;
+bool ledState = false ;
 
 static void flushOLED() {
   display.clearDisplay();      // Wipes the entire screen pixel grid instantly

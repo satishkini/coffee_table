@@ -17,7 +17,6 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
     .slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 35px; height: 35px; background: #ffcc00; border-radius: 50%; cursor: pointer; }
     .btn { background-color: #333; border: 2px solid #555; color: white; padding: 15px; font-size: 18px; font-weight: bold; margin: 10px 5px; cursor: pointer; border-radius: 10px; width: 45%; text-decoration: none; display: inline-block; }
     .btn.active { background-color: #ffcc00; color: #000; border-color: #ffcc00; }
-    .btn.disabled { opacity: 0.3; pointer-events: none; border-color: #333; }
     .action-btn { background-color: #00adb5; border: none; width: 45%; margin: 5px; }
     .action-btn:active { background-color: #008c9e; }
     .led-btn { background-color: #4a4e69; border: none; width: 45%; margin: 5px; }
@@ -31,12 +30,6 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
     .input-group label { font-size: 14px; color: #bbb; }
     .input-group input { width: 90px; padding: 6px; background: #111; border: 1px solid #555; color: #fff; border-radius: 6px; text-align: center; font-size: 14px; }
     .update-btn { background-color: #00adb5; border: none; color: white; padding: 10px; font-size: 14px; font-weight: bold; width: 100%; border-radius: 8px; cursor: pointer; margin-top: 5px; }
-    .switch { position: relative; display: inline-block; width: 50px; height: 26px; }
-    .switch input { opacity: 0; width: 0; height: 0; }
-    .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #444; transition: .3s; border-radius: 34px; }
-    .toggle-slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 4px; bottom: 4px; background-color: white; transition: .3s; border-radius: 50%; }
-    input:checked + .toggle-slider { background-color: #00adb5; }
-    input:checked + .toggle-slider:before { transform: translateX(24px); }
   </style>
 </head>
 <body>
@@ -61,16 +54,6 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
   <button class="settings-toggle" onclick="toggleSettingsMenu()">SETTINGS</button>
   <div class="config-panel" id="settingsMenu">
     <div class="config-title">Momentum and Automation Fine-Tuning</div>
-    
-    <div class="input-group">
-      <label style="color:#ffcc00; font-weight:bold;">LED Network Status Mode:</label>
-      <label class="switch">
-        <input type="checkbox" id="ledModeToggle" onchange="updateLedAssignmentMode(this.checked)">
-        <span class="toggle-slider"></span>
-      </label>
-    </div>
-    <hr style="border: 0; border-top: 1px solid #444; margin-bottom: 12px;">
-
     <div class="input-group">
       <label for="stepInput">Ramp Step Size (1-50):</label>
       <input type="number" id="stepInput" min="1" max="50" value="2">
@@ -94,15 +77,7 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
       fetch('/status')
         .then(response => response.json())
         .then(data => {
-          const isNetworkMode = (data.ledMode === 1);
-          document.getElementById("ledModeToggle").checked = isNetworkMode;
-          
-          if(isNetworkMode) {
-            document.getElementById("ledOnBtn").classList.add("disabled");
-            document.getElementById("ledOffBtn").classList.add("disabled");
-          }
-          
-          if(data.ledState === 1) {
+          if (data.ledState === 1) {
             document.getElementById("ledOnBtn").classList.add("active");
             document.getElementById("ledOffBtn").classList.remove("active");
           } else {
@@ -110,7 +85,7 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
             document.getElementById("ledOnBtn").classList.remove("active");
           }
           
-          if(data.dir === "forward") {
+          if (data.dir === "forward") {
             document.getElementById("fwdBtn").classList.add("active");
             document.getElementById("revBtn").classList.remove("active");
           } else {
@@ -129,9 +104,11 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
       document.getElementById("speedVal").innerText = val;
       fetch('/saveselectpercent?val=' + val);
     }
+    
     function startTrain() { fetch('/start'); }
+    
     function toggleLed(state) {
-      if(state === 1) {
+      if (state === 1) {
         document.getElementById("ledOnBtn").classList.add("active");
         document.getElementById("ledOffBtn").classList.remove("active");
       } else {
@@ -140,23 +117,11 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
       }
       fetch('/setled?state=' + state);
     }
-    function updateLedAssignmentMode(isNetworkMode) {
-      const modeVal = isNetworkMode ? 1 : 0;
-      const onBtn = document.getElementById("ledOnBtn");
-      const offBtn = document.getElementById("ledOffBtn");
-      
-      if(isNetworkMode) {
-        onBtn.classList.add("disabled");
-        offBtn.classList.add("disabled");
-      } else {
-        onBtn.classList.remove("disabled");
-        offBtn.classList.remove("disabled");
-      }
-      fetch('/setledmode?network=' + modeVal);
-    }
+    
     function stopTrainSmoothly() { fetch('/smoothstop'); }
+    
     function setDirection(dir) {
-      if(dir === 'forward') {
+      if (dir === 'forward') {
         document.getElementById("fwdBtn").classList.add("active");
         document.getElementById("revBtn").classList.remove("active");
       } else {
@@ -165,14 +130,17 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
       }
       fetch('/setdir?dir=' + dir);
     }
+    
     function emergencyStop() {
       document.getElementById("throttle").value = 0;
       document.getElementById("speedVal").innerText = 0;
       fetch('/stop');
     }
+    
     function toggleSettingsMenu() {
       document.getElementById("settingsMenu").classList.toggle("expanded");
     }
+    
     function updatePhysicsSettings() {
       const step = document.getElementById("stepInput").value;
       const interval = document.getElementById("intervalInput").value;
