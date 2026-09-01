@@ -42,7 +42,13 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
   <h2>Coffee table Controller</h2>
   <div class="container">
     <div class="label">Target Speed: <span id="speedVal" class="value">0</span>%</div>
-    <input type="range" min="0" max="100" value="0" class="slider" id="throttle" oninput="updateSpeedValue(this.value)">
+    <!-- ADDED INTERACTION GATES: mousedown, mouseup, touchstart, and touchend clear the race condition -->
+    <input type="range" min="0" max="100" value="0" class="slider" id="throttle" 
+           oninput="updateSpeedValue(this.value)"
+           onmousedown="startInteraction()" 
+           onmouseup="endInteraction()"
+           ontouchstart="startInteraction()" 
+           ontouchend="endInteraction()">
     <div>
       <button class="btn action-btn" onclick="startTrain()">START</button>
       <button class="btn action-btn" onclick="stopTrainSmoothly()">STOP</button>
@@ -90,10 +96,30 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
     <button class="update-btn" onclick="updatePhysicsSettings()">UPDATE CONFIGURATIONS</button>
   </div>
   <script>
-    window.addEventListener("DOMContentLoaded", () => {
+    let isUserInteracting = false;
+    let interactionTimeout = null;
+
+    function startInteraction() {
+      isUserInteracting = true;
+      if (interactionTimeout) clearTimeout(interactionTimeout);
+    }
+
+    function endInteraction() {
+      // Wait 1.5 seconds after lifting your finger to let the server process completely
+      interactionTimeout = setTimeout(() => {
+        isUserInteracting = false;
+      }, 1500);
+    }
+
+    function fetchStatusUpdate() {
+      // FIXED BLOCK: Drops out instantly if your hand is currently dragging the throttle bar!
+      if (isUserInteracting) return;
+
       fetch('/status')
         .then(response => response.json())
         .then(data => {
+          if (isUserInteracting) return; // Guard double check
+
           if (data.ledState === 1) {
             document.getElementById("ledOnBtn").classList.add("active");
             document.getElementById("ledOffBtn").classList.remove("active");
@@ -116,7 +142,14 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
           document.getElementById("cooldownInput").value = data.cooldown;
           document.getElementById("clampInput").value = data.clamp;
           document.getElementById("debugToggle").checked = (data.debug === 1);
-        }).catch(err => console.error("Handshake initialization sync failed:", err));
+        }).catch(err => console.error("Telemetry update loop dropped:", err));
+    }
+
+    // Initial page load synchronization
+    window.addEventListener("DOMContentLoaded", () => {
+      fetchStatusUpdate();
+      // Runs cyclic loops every 1 second safely protected by our new interaction guard
+      setInterval(fetchStatusUpdate, 1000);
     });
 
     function updateSpeedValue(val) {

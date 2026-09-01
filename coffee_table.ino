@@ -12,8 +12,7 @@
 
 volatile TrainConfig config;
 
-unsigned long trackingTimeLimit       = 300000;
-unsigned long connectionCheckInterval = 60000; 
+
 
 TrainState currentState = RUNNING;
 
