@@ -1,8 +1,5 @@
 #include <WiFi.h>
-#include <AsyncTCP.h>
-#include <ESPAsyncWebServer.h>
-#include <WiFiManager.h>
-
+#include <WebServer.h>
 #include "ct_persistence.h"
 #include "ct_index.h"
 #include "ct_automation.h" 
@@ -11,8 +8,6 @@
 
 
 volatile TrainConfig config;
-
-
 
 TrainState currentState = RUNNING;
 
@@ -33,5 +28,6 @@ void loop() {
   processAutomation(currentTime);      
   processMomentum(currentTime);        
   processOnlineTime(currentTime); 
- //setOLEDLine2(NULL);
+ 
+ server.handleClient(); 
 }

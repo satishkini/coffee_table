@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
-#include <ESPAsyncWebServer.h>
+
 #include <Preferences.h>
 #include "ct_server.h"
 #include "ct_hardware.h"   
@@ -8,8 +8,13 @@
 #include "ct_automation.h"
 #include "ct_index.h"
 
-AsyncWebServer server(80); 
+WebServer server(80); 
 
+int targetPercent = 0;
+unsigned long lastConnectionCheckTime = 0;
+unsigned long disconnectWindowStart = 0;
+int disconnectCounter               = 0;
+const int maxDisconnectAllowed      = 5; 
 
 extern int targetSpeed;
 extern int storedRunSpeed;
@@ -17,13 +22,10 @@ extern int currentSpeed;
 extern bool isForward;
 extern TrainState currentState;
 
-extern unsigned long trackingTimeLimit;
-extern volatile TrainConfig config;
-
-
-const int maxDisconnectAllowed      = 5; 
+unsigned long trackingTimeLimit;
 unsigned long connectionCheckInterval = 60000;  
-unsigned long trackingTimeLimit       = 300000;
+volatile bool isProcessingDisconnect = false;
+extern volatile TrainConfig config;
 
 bool ledState = false;
 bool displayConnectedTime = true;
@@ -31,25 +33,17 @@ bool enableDebug = false;
 
 bool isConfigPortalActive = false;
 unsigned long lastActiveIPTime = 0;
-extern bool irTrippedActiveStop; 
 
-int targetPercent = 0;
-unsigned long lastConnectionCheckTime = 0;
-unsigned long disconnectWindowStart = 0;
-int disconnectCounter               = 0;
-volatile bool isProcessingDisconnect = false;
-
-bool isPendingDirectionFlip = false;
+bool isPendingDirectionFlip = true ;
 bool pendingDirection = true;
+extern bool irTrippedActiveStop;
 
-
-void handleRootDashboard(AsyncWebServerRequest *request) {
-  AsyncWebServerResponse *response = request->beginResponse(200, "text/html", "");
-  response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-  request->send_P(200, "text/html", HTML_PAGE); 
+void handleRootDashboard() {
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  server.send_P(200, "text/html", HTML_PAGE); 
 }
 
-void handleStatusUpdate(AsyncWebServerRequest *request) {
+void handleStatusUpdate() {
   TrainConfig snap;
   snap.rampStep             = config.rampStep;
   snap.rampInterval         = config.rampInterval;
@@ -78,104 +72,107 @@ void handleStatusUpdate(AsyncWebServerRequest *request) {
   json += "\"debug\":" + String(enableDebug ? 1 : 0) + ",";
   json += "\"state\":\"" + stateStr + "\",";       
   json += "\"current\":" + String(livePercent) + ",";
-  json += "\"target\":" + String(targetPercent);     // NEW JSON ENTRY: Passes current target percentage block back to UI
+  json += "\"target\":" + String(targetPercent);     
   json += "}";
-  request->send(200, "application/json", json);
+  server.send(200, "application/json", json);
 }
 
-
-void handleSaveSelectPercent(AsyncWebServerRequest *request) {
-  if (request->hasArg("val")) {
-    targetPercent = request->arg("val").toInt();
+void handleSaveSelectPercent() {
+  if (server.hasArg("val")) {
+    targetPercent = server.arg("val").toInt();
   }
-  request->send(200, "text/plain", "Percentage Stored");
+  server.send(200, "text/plain", "Percentage Stored");
 }
 
-void handleSetLed(AsyncWebServerRequest *request) {
-  if (request->hasArg("state")) {
-    ledState = (request->arg("state").toInt() == 1);
+void handleSetLed() {
+  if (server.hasArg("state")) {
+    ledState = (server.arg("state").toInt() == 1);
     switchOnboardLED(ledState);
   }
-  request->send(200, "text/plain", "LED Updated");
+  server.send(200, "text/plain", "LED Updated");
 }
 
-void handleStartTrain(AsyncWebServerRequest *request) {
+void handleSaveDefaultSpeed() {
+  config.defaultSpeed = targetPercent; 
+  saveTrainConfigToFlash(); 
+  server.send(200, "text/plain", "Default Speed Saved to Flash");
+}
+
+void handleStartTrain() {
   if (currentState == EMERGENCY_STOP || currentState == STOPPED || currentState == AT_STATION) {
-    currentState = RAMPING_UP; // Directly triggers RAMPING_UP transition
+    currentState = RAMPING_UP; 
   }
   targetSpeed = map(targetPercent, 0, 100, 0, 220); 
   storedRunSpeed = targetSpeed; 
-  request->send(200, "text/plain", "Started");
+  server.send(200, "text/plain", "Started");
 }
 
-void handleSmoothStop(AsyncWebServerRequest *request) {
+void handleSmoothStop() {
   if (currentState == RUNNING || currentState == RAMPING_UP) {
-    currentState = RAMPING_DOWN; // Directly triggers RAMPING_DOWN transition
+    currentState = RAMPING_DOWN; 
   }
   irTrippedActiveStop = false; 
   targetSpeed = 0; 
-  request->send(200, "text/plain", "Smooth Stop Active");
+  server.send(200, "text/plain", "Smooth Stop Active");
 }
 
-void handleSetDirection(AsyncWebServerRequest *request) {
-  if (request->hasArg("dir")) {
-    bool targetDir = (request->arg("dir") == "forward");
+void handleSetDirection() {
+  if (server.hasArg("dir")) {
+    bool targetDir = (server.arg("dir") == "forward");
     
+    if (currentState == EMERGENCY_STOP) {
+      currentState = RUNNING;
+    }
+
     if (currentSpeed > 0 && isForward != targetDir) {
-      // INTERLOCK: Mark that we need to flip directions, and command a smooth stop first
       isPendingDirectionFlip = true;
       pendingDirection = targetDir;
       targetSpeed = 0; 
-      
-      if (enableDebug) {
-        Serial.printf("[%lu ms] DEBUG: Direction change requested. Ramping down train safely first...\n", millis());
-      }
     } else {
-      // If the train is already stopped or moving in the same direction, apply it instantly
       isForward = targetDir;
       targetSpeed = storedRunSpeed;
       applyTrackPower();
     }
   }
-  request->send(200, "text/plain", "OK");
+  server.send(200, "text/plain", "OK");
 }
 
-void handleUpdatePhysics(AsyncWebServerRequest *request) {
-  if (request->hasArg("step") && request->hasArg("interval") && request->hasArg("wait") && request->hasArg("cooldown") && request->hasArg("clamp")) {
-    config.rampStep = request->arg("step").toInt();
-    config.rampInterval = request->arg("interval").toInt();
-    config.stationWaitDuration = request->arg("wait").toInt();
-    config.irCooldown = request->arg("cooldown").toInt();
-    config.minSpeedClamp = request->arg("clamp").toInt();
+void handleUpdatePhysics() {
+  if (server.hasArg("step") && server.hasArg("interval") && server.hasArg("wait") && server.hasArg("cooldown") && server.hasArg("clamp")) {
+    config.rampStep = server.arg("step").toInt();
+    config.rampInterval = server.arg("interval").toInt();
+    config.stationWaitDuration = server.arg("wait").toInt();
+    config.irCooldown = server.arg("cooldown").toInt();
+    config.minSpeedClamp = server.arg("clamp").toInt();
     saveTrainConfigToFlash(); 
   }
-  request->send(200, "text/plain", "Saved");
+  server.send(200, "text/plain", "Saved");
 }
 
-void handleEmergencyStop(AsyncWebServerRequest *request) {
+void handleEmergencyStop() {
   targetSpeed = 0;
   storedRunSpeed = 0;
   currentSpeed = 0; 
   currentState = EMERGENCY_STOP; 
   applyTrackPower();
-  request->send(200, "text/plain", "Emergency Stop Executed");
+  server.send(200, "text/plain", "Emergency Stop Executed");
 }
 
-void handleSetLedMode(AsyncWebServerRequest *request) {
-  request->send(200, "text/plain", "Muted");
+void handleSetLedMode() {
+  server.send(200, "text/plain", "Muted");
 }
 
-void handleSetDebug(AsyncWebServerRequest *request) {
-  if (request->hasArg("state")) {
-    enableDebug = (request->arg("state").toInt() == 1);
+void handleSetDebug() {
+  if (server.hasArg("state")) {
+    enableDebug = (server.arg("state").toInt() == 1);
     enableConnectedTime(enableDebug);
     Serial.printf("[%lu ms] System state parameters shifted: enableDebug = %s\n", millis(), enableDebug ? "TRUE" : "FALSE");
   }
-  request->send(200, "text/plain", "Debug Target State Synced");
+  server.send(200, "text/plain", "Debug Target State Synced");
 }
 
-void handleClearFlash(AsyncWebServerRequest *request) {
-  if (request->hasArg("confirm") && request->arg("confirm") == "true") {
+void handleClearFlash() {
+  if (server.hasArg("confirm") && server.arg("confirm") == "true") {
     Serial.printf("[%lu ms] FACTORY RESET INITIALIZED: Wiping local configuration blocks...\n", millis());
     enableConnectedTime(false);
     setOLEDLine1("FACTORY");
@@ -187,7 +184,7 @@ void handleClearFlash(AsyncWebServerRequest *request) {
     prefs.end();
     
     Serial.printf("[%lu ms] NVRAM wiped cleanly. Executing immediate software restart...\n", millis());
-    request->send(200, "text/plain", "Flash partitions cleared. Controller is resetting to factory default settings...");
+    server.send(200, "text/plain", "Flash partitions cleared. Controller is resetting to factory default settings...");
     delay(2000); 
     ESP.restart(); 
   } else {
@@ -201,18 +198,13 @@ void handleClearFlash(AsyncWebServerRequest *request) {
     html += "<p>This action will permanently erase your saved Wi-Fi networks, physics parameters, and custom configuration registers.</p>";
     html += "<a href='/clearflash?confirm=true' class='btn'>CONFIRM HARD WIPE</a>";
     html += "<a href='/' class='btn btn-cancel'>CANCEL</a></div></body></html>";
-    request->send(200, "text/html", html);
+    server.send(200, "text/html", html);
   }
-}
-
-void handleSaveDefaultSpeed(AsyncWebServerRequest *request) {
-  config.defaultSpeed = targetPercent; 
-  saveTrainConfigToFlash(); 
-  request->send(200, "text/plain", "Default Speed Saved to Flash");
 }
 
 void initServer() {
   isProcessingDisconnect = true; 
+  targetPercent = config.defaultSpeed;
 
   WiFi.onEvent(WiFiEvent);
   WiFi.mode(WIFI_STA); 
@@ -236,27 +228,26 @@ void initServer() {
     Serial.println(WiFi.localIP());
     setOLEDLine1("ONLINE");
 
-    server.on("/", WebRequestMethod::HTTP_GET, handleRootDashboard);
+    server.on("/", HTTP_GET, handleRootDashboard);
   }
 
-  server.on("/status", WebRequestMethod::HTTP_GET, handleStatusUpdate);
-  server.on("/saveselectpercent", WebRequestMethod::HTTP_GET, handleSaveSelectPercent);
-  server.on("/setled", WebRequestMethod::HTTP_GET, handleSetLed);
-  server.on("/start", WebRequestMethod::HTTP_GET, handleStartTrain);
-  server.on("/smoothstop", WebRequestMethod::HTTP_GET, handleSmoothStop);
-  server.on("/setdir", WebRequestMethod::HTTP_GET, handleSetDirection);
-  server.on("/updatephysics", WebRequestMethod::HTTP_GET, handleUpdatePhysics);
-  server.on("/stop", WebRequestMethod::HTTP_GET, handleEmergencyStop);
-  server.on("/setledmode", WebRequestMethod::HTTP_GET, handleSetLedMode);
-  server.on("/setdebug", WebRequestMethod::HTTP_GET, handleSetDebug);
-  server.on("/clearflash", WebRequestMethod::HTTP_GET, handleClearFlash);
-  server.on("/savedefaultspeed", WebRequestMethod::HTTP_GET, handleSaveDefaultSpeed);
+  server.on("/status", HTTP_GET, handleStatusUpdate);
+  server.on("/saveselectpercent", HTTP_GET, handleSaveSelectPercent);
+  server.on("/setled", HTTP_GET, handleSetLed);
+  server.on("/savedefaultspeed", HTTP_GET, handleSaveDefaultSpeed);
+  server.on("/start", HTTP_GET, handleStartTrain);
+  server.on("/smoothstop", HTTP_GET, handleSmoothStop);
+  server.on("/setdir", HTTP_GET, handleSetDirection);
+  server.on("/updatephysics", HTTP_GET, handleUpdatePhysics);
+  server.on("/stop", HTTP_GET, handleEmergencyStop);
+  server.on("/setledmode", HTTP_GET, handleSetLedMode);
+  server.on("/setdebug", HTTP_GET, handleSetDebug);
+  server.on("/clearflash", HTTP_GET, handleClearFlash);
   
   server.begin();
   isProcessingDisconnect = false; 
 }
-
-void handlePortalRoot(AsyncWebServerRequest *request) {
+void handlePortalRoot() {
   String html = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1.0'>";
   html += "<style>body{font-family:Arial;background:#111;color:#fff;text-align:center;padding:20px;}";
   html += "input{display:block;width:80%;max-width:300px;margin:15px auto;padding:12px;background:#222;border:1px solid #444;color:#fff;border-radius:6px;}";
@@ -265,13 +256,13 @@ void handlePortalRoot(AsyncWebServerRequest *request) {
   html += "<input type='text' name='s' placeholder='WiFi SSID' required>";
   html += "<input type='password' name='p' placeholder='WiFi Password'>";
   html += "<button type='submit'>SAVE AND CONNECT</button></form></body></html>";
-  request->send(200, "text/html", html);
+  server.send(200, "text/html", html);
 }
 
-void handlePortalSaveWifi(AsyncWebServerRequest *request) {
-  if (request->hasArg("s")) {
-    String newSSID = request->arg("s");
-    String newPASS = request->hasArg("p") ? request->arg("p") : "";
+void handlePortalSaveWifi() {
+  if (server.hasArg("s")) {
+    String newSSID = server.arg("s");
+    String newPASS = server.hasArg("p") ? server.arg("p") : "";
     
     memset((void*)&config.wifiSSID, 0, sizeof(config.wifiSSID));
     memset((void*)&config.wifiPASS, 0, sizeof(config.wifiPASS));
@@ -282,11 +273,11 @@ void handlePortalSaveWifi(AsyncWebServerRequest *request) {
     
     Serial.printf("[%lu ms] New credentials saved to Flash. Executing orderly clean software reset...\n", millis());
     
-    request->send(200, "text/plain", "Credentials Saved. Rebooting train layout...");
+    server.send(200, "text/plain", "Credentials Saved. Rebooting train layout...");
     delay(2000);
     ESP.restart(); 
   } else {
-    request->send(400, "text/plain", "Bad Request");
+    server.send(400, "text/plain", "Bad Request");
   }
 }
 
@@ -313,8 +304,8 @@ void bootConfigPortal() {
     setOLEDLine1(toggle ? "PAIR PHONE" : "LOCAL AP");
   }
 
-  server.on("/", WebRequestMethod::HTTP_GET, handlePortalRoot);
-  server.on("/savewifi", WebRequestMethod::HTTP_GET, handlePortalSaveWifi);
+  server.on("/", HTTP_GET, handlePortalRoot);
+  server.on("/savewifi", HTTP_GET, handlePortalSaveWifi);
 }
 
 void processConnectionCheck(unsigned long currentTime) {
@@ -375,7 +366,6 @@ void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
       Serial.println(WiFi.localIP());
       isProcessingDisconnect = false;
       setOLEDLine1("ONLINE");
-      setOLEDLine2("");
       enableConnectedTime(true);
       lastActiveIPTime = now;
       break;
@@ -419,14 +409,14 @@ void processOnlineTime(unsigned long currentTime) {
   if (currentTime - lastUptimeRefresh >= 1000) {
     lastUptimeRefresh = currentTime;
 
-     if (displayConnectedTime && lastActiveIPTime > 0) {
+     if (displayConnectedTime && lastActiveIPTime > 0 && currentSpeed == 0) {
       unsigned long totalSeconds = (currentTime - lastActiveIPTime) / 1000;
+      
       unsigned int seconds = totalSeconds % 60;
       unsigned int minutes = (totalSeconds / 60) % 60;
-      unsigned int hours   = (totalSeconds / 3600);
+      unsigned int hours   = totalSeconds / 3600; 
 
-      char uptimeBuffer[11];
-
+      char uptimeBuffer[DISPLAY_BUFFER_SIZE];
       snprintf(uptimeBuffer, sizeof(uptimeBuffer), "%02uh%02um%02us", hours, minutes, seconds);
       
       setOLEDLine2(uptimeBuffer);

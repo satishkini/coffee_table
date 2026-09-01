@@ -3,34 +3,35 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
-#include <ESPAsyncWebServer.h>
-
-
+#include <WebServer.h>
 
 void initServer(); 
-void bootConfigPortal();
+void bootConfigPortal(); 
 void processConnectionCheck(unsigned long currentTime);
-void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info); 
+void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info);
 void handleNetworkDisconnections(unsigned long currentTime);
 bool isNetworkLinkStable();
 
 void enableConnectedTime(bool enable);
 void processOnlineTime(unsigned long currentTime);
 
-void handleRootDashboard(AsyncWebServerRequest *request);
-void handleStatusUpdate(AsyncWebServerRequest *request);
-void handleSaveSelectPercent(AsyncWebServerRequest *request);
-void handleSetLed(AsyncWebServerRequest *request);
-void handleStartTrain(AsyncWebServerRequest *request);
-void handleSmoothStop(AsyncWebServerRequest *request);
-void handleSetDirection(AsyncWebServerRequest *request);
-void handleUpdatePhysics(AsyncWebServerRequest *request);
-void handleEmergencyStop(AsyncWebServerRequest *request);
-void handleSetLedMode(AsyncWebServerRequest *request);
-void handleSetDebug(AsyncWebServerRequest *request);
-void handleClearFlash(AsyncWebServerRequest *request);
+void handleRootDashboard();
+void handleStatusUpdate();
+void handleSaveSelectPercent();
+void handleSetLed();
+void handleSaveDefaultSpeed();
+void handleStartTrain();
+void handleSmoothStop();
+void handleSetDirection();
+void handleUpdatePhysics();
+void handleEmergencyStop();
+void handleSetLedMode();
+void handleSetDebug();
+void handleClearFlash();
 
-void handlePortalRoot(AsyncWebServerRequest *request);
-void handlePortalSaveWifi(AsyncWebServerRequest *request);
+void handlePortalRoot();
+void handlePortalSaveWifi();
 
+extern unsigned long lastActiveIPTime;
+extern WebServer server;
 #endif

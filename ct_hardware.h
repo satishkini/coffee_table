@@ -11,8 +11,6 @@
 
 #define DISPLAY_BUFFER_SIZE 11
 
-extern unsigned long trackingTimeLimit;
-extern unsigned long connectionCheckInterval;
 
 void initHardware();
 void applyTrackPower();
