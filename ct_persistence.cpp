@@ -6,11 +6,8 @@ extern volatile TrainConfig config;
 
 void saveTrainConfigToFlash() {
   Preferences prefs; 
-  
   prefs.begin("train-core", false);
-  
   prefs.putBytes("sysConfig", (const void*)&config, sizeof(TrainConfig));
-  
   prefs.end();
   Serial.println("[Flash Layer] System configuration bytes atomically saved.");
 }
@@ -22,16 +19,19 @@ void loadTrainConfigFromFlash() {
   
   if (prefs.isKey("sysConfig")) {
     prefs.getBytes("sysConfig", (void*)&config, sizeof(TrainConfig));
-    Serial.println("[Flash Layer] Structural system parameters successfully loaded.");
+    Serial.printf("[%lu ms] Structural system parameters successfully loaded.\n", millis());
   } else {
-    Serial.println("[Flash Layer] No saved configurations found. Using active structural defaults.");
+    Serial.printf("[%lu ms] No configurations found. Initializing safe baseline defaults...\n", millis());
     config.rampInterval        = 15;
     config.rampStep            = 2;
     config.stationWaitDuration = 4000;
     config.irCooldown          = 5000;
-
+    config.minSpeedClamp       = 35; 
+    
     memset((void*)config.wifiSSID, 0, sizeof(config.wifiSSID));
     memset((void*)config.wifiPASS, 0, sizeof(config.wifiPASS));
+
+    saveTrainConfigToFlash();
   }
   
   prefs.end();

@@ -1,8 +1,3 @@
-/**
- * @file ct_server.h
- * @brief Blueprint header mapping web interface routes and watchdog profiles.
- */
-
 #ifndef CT_SERVER_H
 #define CT_SERVER_H
 

@@ -22,10 +22,10 @@ extern bool isForward;
 extern TrainState currentState;
 
 extern unsigned long trackingTimeLimit;
-extern volatile bool isProcessingDisconnect;
+volatile bool isProcessingDisconnect = false;
 extern volatile TrainConfig config;
 
-extern bool ledState;
+bool ledState = false;
 bool displayConnectedTime = true;
 bool enableDebug = false;
 
@@ -70,6 +70,7 @@ void initServer() {
     snap.rampInterval         = config.rampInterval;
     snap.stationWaitDuration  = config.stationWaitDuration;
     snap.irCooldown           = config.irCooldown;
+    snap.minSpeedClamp       = config.minSpeedClamp;
 
     String json = "{";
     json += "\"ledState\":" + String(ledState ? 1 : 0) + ","; 
@@ -78,11 +79,11 @@ void initServer() {
     json += "\"interval\":" + String(snap.rampInterval) + ",";
     json += "\"wait\":" + String(snap.stationWaitDuration) + ",";
     json += "\"cooldown\":" + String(snap.irCooldown) + ",";
-    json += "\"debug\":" + String(enableDebug ? 1 : 0); // NEW: Maps runtime flag status back to UI slider
+    json += "\"clamp\":" + String(snap.minSpeedClamp) + ",";
+    json += "\"debug\":" + String(enableDebug ? 1 : 0);
     json += "}";
     request->send(200, "application/json", json);
   });
-
 
   server.on("/saveselectpercent", WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     if (request->hasArg("val")) {
@@ -94,7 +95,7 @@ void initServer() {
   server.on("/setled", WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     if (request->hasArg("state")) {
       ledState = (request->arg("state").toInt() == 1);
-      digitalWrite(LED_PIN, ledState ? LOW : HIGH);
+      switchOnboardLED(ledState);
     }
     request->send(200, "text/plain", "LED Updated");
   });
@@ -127,11 +128,12 @@ void initServer() {
   });
 
   server.on("/updatephysics", WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
-    if (request->hasArg("step") && request->hasArg("interval") && request->hasArg("wait") && request->hasArg("cooldown")) {
+    if (request->hasArg("step") && request->hasArg("interval") && request->hasArg("wait") && request->hasArg("cooldown") && request->hasArg("clamp")) {
       config.rampStep = request->arg("step").toInt();
       config.rampInterval = request->arg("interval").toInt();
       config.stationWaitDuration = request->arg("wait").toInt();
       config.irCooldown = request->arg("cooldown").toInt();
+      config.minSpeedClamp = request->arg("clamp").toInt();
       saveTrainConfigToFlash(); 
     }
     request->send(200, "text/plain", "Saved");
@@ -162,7 +164,6 @@ void initServer() {
   server.begin();
   isProcessingDisconnect = false; 
 }
-
 void bootConfigPortal() {
   Serial.printf("[%lu ms] Handshake failed. Booting async local setup AP...\n", millis());
   setOLEDLine1("NET FAIL");
@@ -179,9 +180,8 @@ void bootConfigPortal() {
 
   Serial.println("[AP Mode] Waiting for a client device to connect to 'Coffee-Table-Train'...");
   while (WiFi.softAPgetStationNum() == 0) {
-    delay(1000); // Check once per second to prevent CPU thrashing
+    delay(1000); 
       
-    // Flash the display or status line to alert the user visually
     static bool toggle = false;
     toggle = !toggle;
     setOLEDLine1(toggle ? "PAIR PHONE" : "LOCAL AP");
@@ -204,10 +204,10 @@ void bootConfigPortal() {
       String newSSID = request->arg("s");
       String newPASS = request->hasArg("p") ? request->arg("p") : "";
       
-      memset((void*)config.wifiSSID, 0, sizeof(config.wifiSSID));
-      memset((void*)config.wifiPASS, 0, sizeof(config.wifiPASS));
-      strncpy((char*)config.wifiSSID, newSSID.c_str(), sizeof(config.wifiSSID) - 1);
-      strncpy((char*)config.wifiPASS, newPASS.c_str(), sizeof(config.wifiPASS) - 1);
+      memset((void*)&config.wifiSSID, 0, sizeof(config.wifiSSID));
+      memset((void*)&config.wifiPASS, 0, sizeof(config.wifiPASS));
+      strncpy((char*)&config.wifiSSID, newSSID.c_str(), sizeof(config.wifiSSID) - 1);
+      strncpy((char*)&config.wifiPASS, newPASS.c_str(), sizeof(config.wifiPASS) - 1);
       
       saveTrainConfigToFlash(); 
       
@@ -230,9 +230,6 @@ void processConnectionCheck(unsigned long currentTime) {
   if (currentTime - lastConnectionCheckTime >= connectionCheckInterval) {
     lastConnectionCheckTime = currentTime;
     
-    // --- BREAK THE DEADLOCK ENGINE ---
-    // If the radio is down, we do NOT care if isProcessingDisconnect is true.
-    // We actively force handleNetworkDisconnections to issue a brand new retry request!
     if (WiFi.status() != WL_CONNECTED && WiFi.getMode() == WIFI_STA) {
       Serial.printf("[%lu ms] System still offline. Issuing active 60s retry sweep...\n", currentTime);
       
@@ -241,13 +238,11 @@ void processConnectionCheck(unsigned long currentTime) {
       
       handleNetworkDisconnections(currentTime);
     } else if (WiFi.status() == WL_CONNECTED) {
-      // Clear all blocks immediately if everything is healthy
       isProcessingDisconnect = false;
       disconnectCounter = 0;
     }
   }
 }
-
 
 void handleNetworkDisconnections(unsigned long currentTime) {
   isProcessingDisconnect = true;
@@ -307,23 +302,18 @@ bool isNetworkLinkStable() {
 
 void enableConnectedTime(bool enable) {
   displayConnectedTime = enable;
-  
-  // IMMEDIATELY BLANK THE ROW IN MEMORY IF DISABLED
   if (!displayConnectedTime) {
     setOLEDLine2("");
   }
 }
 
-
 void processOnlineTime(unsigned long currentTime) {
-  // Local static timestamp tracker confines memory allocation scope inside this loop
   static unsigned long lastUptimeRefresh = 0;
 
-  if ( !enableDebug ) {
+  if (!enableDebug) {
     return;
   }
 
-  // Non-blocking gate constraints slice execution loop exactly to 1-second intervals
   if (currentTime - lastUptimeRefresh >= 1000) {
     lastUptimeRefresh = currentTime;
 

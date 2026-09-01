@@ -24,7 +24,7 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
     .stop-btn { background-color: #cc0000; border-color: #aa0000; width: 95%; font-size: 22px; padding: 20px; margin-top: 15px; }
     .settings-toggle { background-color: #444; border: 1px solid #666; color: #ffcc00; padding: 12px; font-size: 16px; font-weight: bold; width: 100%; max-width: 440px; border-radius: 10px; cursor: pointer; margin: 15px auto 5px auto; display: block; }
     .config-panel { max-width: 400px; margin: 0 auto; background: #2c2c2c; padding: 0 15px; border-radius: 12px; border: 1px solid #444; text-align: left; max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out, padding 0.3s ease-out; }
-    .config-panel.expanded { max-height: 450px; padding: 15px; }
+    .config-panel.expanded { max-height: 480px; padding: 15px; }
     .config-title { font-size: 16px; color: #ffcc00; font-weight: bold; margin-bottom: 15px; text-align: center; }
     .input-group { margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
     .input-group label { font-size: 14px; color: #bbb; }
@@ -77,6 +77,10 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
       <input type="number" id="cooldownInput" min="1000" max="30000" value="5000">
     </div>
     <div class="input-group">
+      <label for="clampInput">Min Speed Clamp (0-100):</label>
+      <input type="number" id="clampInput" min="0" max="100" value="14">
+    </div>
+    <div class="input-group">
       <label for="debugToggle">Enable Debug Telemetry:</label>
       <label class="toggle-switch">
         <input type="checkbox" id="debugToggle" onclick="toggleDebugMode(this.checked)">
@@ -110,6 +114,7 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
           document.getElementById("intervalInput").value = data.interval;
           document.getElementById("waitInput").value = data.wait;
           document.getElementById("cooldownInput").value = data.cooldown;
+          document.getElementById("clampInput").value = data.clamp;
           document.getElementById("debugToggle").checked = (data.debug === 1);
         }).catch(err => console.error("Handshake initialization sync failed:", err));
     });
@@ -165,7 +170,8 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
       const interval = document.getElementById("intervalInput").value;
       const wait = document.getElementById("waitInput").value;
       const cooldown = document.getElementById("cooldownInput").value;
-      fetch(`/updatephysics?step=${step}&interval=${interval}&wait=${wait}&cooldown=${cooldown}`)
+      const clamp = document.getElementById("clampInput").value;
+      fetch(`/updatephysics?step=${step}&interval=${interval}&wait=${wait}&cooldown=${cooldown}&clamp=${clamp}`)
         .then(response => { if(response.ok) alert("Configurations successfully updated and saved!"); });
     }
   </script>

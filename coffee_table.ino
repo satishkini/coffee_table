@@ -2,7 +2,6 @@
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <WiFiManager.h>
-#include <esp_task_wdt.h>
 
 #include "ct_persistence.h"
 #include "ct_index.h"
@@ -15,9 +14,6 @@ volatile TrainConfig config;
 
 unsigned long trackingTimeLimit       = 300000;
 unsigned long connectionCheckInterval = 60000; 
-
-volatile bool isProcessingDisconnect = false; 
-
 
 TrainState currentState = RUNNING;
 
@@ -34,8 +30,8 @@ void setup() {
 void loop() {
   unsigned long currentTime = millis();
 
-  processConnectionCheck(currentTime); // Tracks Wi-Fi connectivity states (Server tab)
-  processAutomation(currentTime);      // Evaluates station sensor logic (Automation tab)
-  processMomentum(currentTime);        // Computes speed adjustments (Automation tab)
+  processConnectionCheck(currentTime); 
+  processAutomation(currentTime);      
+  processMomentum(currentTime);        
   processOnlineTime(currentTime); 
 }
