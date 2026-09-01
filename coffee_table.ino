@@ -33,4 +33,5 @@ void loop() {
   processAutomation(currentTime);      
   processMomentum(currentTime);        
   processOnlineTime(currentTime); 
+ //setOLEDLine2(NULL);
 }

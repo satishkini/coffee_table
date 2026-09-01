@@ -5,9 +5,11 @@
 
 enum TrainState {
   RUNNING,
-  STOPPING,
-  STATION_WAIT,
-  STARTING_RAMP
+  STOPPED,       
+  AT_STATION,
+  RAMPING_UP,    
+  RAMPING_DOWN,  
+  EMERGENCY_STOP 
 };
 
 extern TrainState currentState;

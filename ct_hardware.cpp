@@ -14,31 +14,61 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 static char cacheLine1[DISPLAY_BUFFER_SIZE] = "STARTING  ";
 static char cacheLine2[DISPLAY_BUFFER_SIZE] = "          "; 
 
+static uint8_t line2Behavior = 0; 
+static unsigned long lastOledToggle = 0;
+static bool toggleState = false;
+
 extern int currentSpeed;
 extern bool isForward;
-
 extern volatile TrainConfig config;
 
 static void flushOLED() {
   display.clearDisplay();      
   display.setTextSize(2);      
-  display.setTextColor(SSD1306_WHITE);
 
+  display.setTextColor(SSD1306_WHITE);
   display.setCursor(0, 0);
   display.print(cacheLine1);
 
   display.setCursor(0, 16);
-  display.print(cacheLine2);
+
+  unsigned long now = millis();
+  
+  if (line2Behavior == 2) {
+    display.setTextColor(SSD1306_BLACK, SSD1306_WHITE); 
+    if (now - lastOledToggle >= 400) { 
+      lastOledToggle = now;
+      toggleState = !toggleState;
+    }
+    if (toggleState) {
+      display.print(cacheLine2);
+    } else {
+      display.print("          "); 
+    }
+  } else if (line2Behavior == 1) {
+    if (now - lastOledToggle >= 400) { 
+      lastOledToggle = now;
+      toggleState = !toggleState;
+    }
+    
+    if (toggleState) {
+      display.setTextColor(SSD1306_WHITE);
+      display.print(cacheLine2);
+    } else {
+      display.print("          "); 
+    }
+  } else {
+    // STANDARD solid white crisp text format
+    display.setTextColor(SSD1306_WHITE);
+    display.print(cacheLine2);
+  }
 
   display.display();
 }
 
-
 void initHardware() {
   pinMode(LED_PIN, OUTPUT);
-  
   loadTrainConfigFromFlash();
-  
   digitalWrite(LED_PIN, HIGH); 
 
   pinMode(SPEED_PIN, OUTPUT);
@@ -46,10 +76,9 @@ void initHardware() {
   pinMode(IR_PIN, INPUT_PULLUP); 
   
   analogWriteFrequency(SPEED_PIN, 20000); 
-    applyTrackPower(); 
+  applyTrackPower(); 
 
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
-  
   if(display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
     flushOLED(); 
     Serial.printf("[%lu ms] Peripheral registers and screen cache online.\n", millis());
@@ -62,9 +91,12 @@ void setOLEDLine1(const char* text) {
   flushOLED(); 
 }
 
-void setOLEDLine2(const char* text) {
-  strncpy(cacheLine2, text, sizeof(cacheLine2) - 1);
-  cacheLine2[sizeof(cacheLine2) - 1] = '\0'; 
+void setOLEDLine2(const char* text, uint8_t behavior) {
+  line2Behavior = behavior;
+  if (text != NULL) {
+    strncpy(cacheLine2, text, sizeof(cacheLine2) - 1);
+    cacheLine2[sizeof(cacheLine2) - 1] = '\0'; 
+  }
   flushOLED(); 
 }
 
@@ -74,7 +106,6 @@ void applyTrackPower() {
     digitalWrite(DIR_PIN, LOW);
     return;
   }
-  
   if (isForward) {
     digitalWrite(DIR_PIN, LOW);
     analogWrite(SPEED_PIN, currentSpeed);

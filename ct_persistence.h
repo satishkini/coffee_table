@@ -10,7 +10,8 @@ struct TrainConfig {
   unsigned long irCooldown;          
   char wifiSSID[33];                 
   char wifiPASS[65];
-  int minSpeedClamp;                 
+  int minSpeedClamp; 
+  int defaultSpeed;                
 };
 
 void saveTrainConfigToFlash();

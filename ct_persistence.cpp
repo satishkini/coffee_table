@@ -27,6 +27,7 @@ void loadTrainConfigFromFlash() {
     config.stationWaitDuration = 4000;
     config.irCooldown          = 5000;
     config.minSpeedClamp       = 35; 
+    config.defaultSpeed        = 40;
     
     memset((void*)config.wifiSSID, 0, sizeof(config.wifiSSID));
     memset((void*)config.wifiPASS, 0, sizeof(config.wifiPASS));

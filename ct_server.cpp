@@ -10,9 +10,6 @@
 
 AsyncWebServer server(80); 
 
-const int maxDisconnectAllowed      = 5; 
-unsigned long connectionCheckInterval = 60000;  
-unsigned long trackingTimeLimit       = 300000;
 
 extern int targetSpeed;
 extern int storedRunSpeed;
@@ -24,13 +21,17 @@ extern unsigned long trackingTimeLimit;
 extern volatile TrainConfig config;
 
 
+const int maxDisconnectAllowed      = 5; 
+unsigned long connectionCheckInterval = 60000;  
+unsigned long trackingTimeLimit       = 300000;
+
 bool ledState = false;
 bool displayConnectedTime = true;
 bool enableDebug = false;
 
 bool isConfigPortalActive = false;
 unsigned long lastActiveIPTime = 0;
-
+extern bool irTrippedActiveStop; 
 
 int targetPercent = 0;
 unsigned long lastConnectionCheckTime = 0;
@@ -38,7 +39,8 @@ unsigned long disconnectWindowStart = 0;
 int disconnectCounter               = 0;
 volatile bool isProcessingDisconnect = false;
 
-
+bool isPendingDirectionFlip = false;
+bool pendingDirection = true;
 
 
 void handleRootDashboard(AsyncWebServerRequest *request) {
@@ -55,6 +57,16 @@ void handleStatusUpdate(AsyncWebServerRequest *request) {
   snap.irCooldown           = config.irCooldown;
   snap.minSpeedClamp        = config.minSpeedClamp;
 
+  String stateStr = "RUNNING";
+  if (currentState == STOPPED)            stateStr = "STOPPED";
+  else if (currentState == AT_STATION)    stateStr = "AT STATION";
+  else if (currentState == RAMPING_UP)    stateStr = "RAMPING UP";   
+  else if (currentState == RAMPING_DOWN)  stateStr = "RAMPING DOWN"; 
+  else if (currentState == EMERGENCY_STOP) stateStr = "EMERGENCY STOP";
+
+  int livePercent = map(currentSpeed, 0, 220, 0, 100);
+  if (currentSpeed == 0) livePercent = 0; 
+
   String json = "{";
   json += "\"ledState\":" + String(ledState ? 1 : 0) + ","; 
   json += "\"dir\":\"" + String(isForward ? "forward" : "reverse") + "\",";
@@ -63,10 +75,14 @@ void handleStatusUpdate(AsyncWebServerRequest *request) {
   json += "\"wait\":" + String(snap.stationWaitDuration) + ",";
   json += "\"cooldown\":" + String(snap.irCooldown) + ",";
   json += "\"clamp\":" + String(snap.minSpeedClamp) + ",";
-  json += "\"debug\":" + String(enableDebug ? 1 : 0);
+  json += "\"debug\":" + String(enableDebug ? 1 : 0) + ",";
+  json += "\"state\":\"" + stateStr + "\",";       
+  json += "\"current\":" + String(livePercent) + ",";
+  json += "\"target\":" + String(targetPercent);     // NEW JSON ENTRY: Passes current target percentage block back to UI
   json += "}";
   request->send(200, "application/json", json);
 }
+
 
 void handleSaveSelectPercent(AsyncWebServerRequest *request) {
   if (request->hasArg("val")) {
@@ -84,12 +100,19 @@ void handleSetLed(AsyncWebServerRequest *request) {
 }
 
 void handleStartTrain(AsyncWebServerRequest *request) {
+  if (currentState == EMERGENCY_STOP || currentState == STOPPED || currentState == AT_STATION) {
+    currentState = RAMPING_UP; // Directly triggers RAMPING_UP transition
+  }
   targetSpeed = map(targetPercent, 0, 100, 0, 220); 
   storedRunSpeed = targetSpeed; 
   request->send(200, "text/plain", "Started");
 }
 
 void handleSmoothStop(AsyncWebServerRequest *request) {
+  if (currentState == RUNNING || currentState == RAMPING_UP) {
+    currentState = RAMPING_DOWN; // Directly triggers RAMPING_DOWN transition
+  }
+  irTrippedActiveStop = false; 
   targetSpeed = 0; 
   request->send(200, "text/plain", "Smooth Stop Active");
 }
@@ -97,15 +120,22 @@ void handleSmoothStop(AsyncWebServerRequest *request) {
 void handleSetDirection(AsyncWebServerRequest *request) {
   if (request->hasArg("dir")) {
     bool targetDir = (request->arg("dir") == "forward");
+    
     if (currentSpeed > 0 && isForward != targetDir) {
-      targetSpeed = 0;
-      while (currentSpeed > 0) {
-        processMomentum(millis());
-        delay(1);
+      // INTERLOCK: Mark that we need to flip directions, and command a smooth stop first
+      isPendingDirectionFlip = true;
+      pendingDirection = targetDir;
+      targetSpeed = 0; 
+      
+      if (enableDebug) {
+        Serial.printf("[%lu ms] DEBUG: Direction change requested. Ramping down train safely first...\n", millis());
       }
+    } else {
+      // If the train is already stopped or moving in the same direction, apply it instantly
+      isForward = targetDir;
+      targetSpeed = storedRunSpeed;
+      applyTrackPower();
     }
-    isForward = targetDir;
-    targetSpeed = storedRunSpeed; 
   }
   request->send(200, "text/plain", "OK");
 }
@@ -126,7 +156,7 @@ void handleEmergencyStop(AsyncWebServerRequest *request) {
   targetSpeed = 0;
   storedRunSpeed = 0;
   currentSpeed = 0; 
-  currentState = RUNNING; 
+  currentState = EMERGENCY_STOP; 
   applyTrackPower();
   request->send(200, "text/plain", "Emergency Stop Executed");
 }
@@ -175,6 +205,12 @@ void handleClearFlash(AsyncWebServerRequest *request) {
   }
 }
 
+void handleSaveDefaultSpeed(AsyncWebServerRequest *request) {
+  config.defaultSpeed = targetPercent; 
+  saveTrainConfigToFlash(); 
+  request->send(200, "text/plain", "Default Speed Saved to Flash");
+}
+
 void initServer() {
   isProcessingDisconnect = true; 
 
@@ -214,6 +250,7 @@ void initServer() {
   server.on("/setledmode", WebRequestMethod::HTTP_GET, handleSetLedMode);
   server.on("/setdebug", WebRequestMethod::HTTP_GET, handleSetDebug);
   server.on("/clearflash", WebRequestMethod::HTTP_GET, handleClearFlash);
+  server.on("/savedefaultspeed", WebRequestMethod::HTTP_GET, handleSaveDefaultSpeed);
   
   server.begin();
   isProcessingDisconnect = false; 
@@ -338,6 +375,7 @@ void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
       Serial.println(WiFi.localIP());
       isProcessingDisconnect = false;
       setOLEDLine1("ONLINE");
+      setOLEDLine2("");
       enableConnectedTime(true);
       lastActiveIPTime = now;
       break;
@@ -385,16 +423,11 @@ void processOnlineTime(unsigned long currentTime) {
       unsigned long totalSeconds = (currentTime - lastActiveIPTime) / 1000;
       unsigned int seconds = totalSeconds % 60;
       unsigned int minutes = (totalSeconds / 60) % 60;
-      unsigned int hours   = (totalSeconds / 3600) % 24;
-      unsigned int days    = totalSeconds / 86400;
+      unsigned int hours   = (totalSeconds / 3600);
 
       char uptimeBuffer[11];
 
-      if (days == 0) {
-        snprintf(uptimeBuffer, sizeof(uptimeBuffer), "%02uh%02um%02us", hours, minutes, seconds);
-      } else {
-        snprintf(uptimeBuffer, sizeof(uptimeBuffer), "%02ud%02uh%02us", days, hours, seconds);
-      }
+      snprintf(uptimeBuffer, sizeof(uptimeBuffer), "%02uh%02um%02us", hours, minutes, seconds);
       
       setOLEDLine2(uptimeBuffer);
     }

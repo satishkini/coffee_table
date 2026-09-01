@@ -5,7 +5,7 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html>
 <head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <title>Z-Scale Throttle</title>
   <style>
     body { font-family: Arial, sans-serif; text-align: center; background-color: #111; color: #eee; margin: 0; padding: 20px; }
@@ -22,9 +22,11 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
     .led-btn { background-color: #4a4e69; border: none; width: 45%; margin: 5px; }
     .led-btn.active { background-color: #9a8c98; color: #fff; border: 1px solid #ffcc00; }
     .stop-btn { background-color: #cc0000; border-color: #aa0000; width: 95%; font-size: 22px; padding: 20px; margin-top: 15px; }
+    .default-btn { background-color: #2c2c2c; border: 1px solid #444; color: #00adb5; font-size: 12px; font-weight: bold; padding: 6px 14px; border-radius: 6px; cursor: pointer; transition: 0.2s; margin-top: -5px; margin-bottom: 15px; display: inline-block; }
+    .default-btn:active { background-color: #00adb5; color: #fff; border-color: #00adb5; }
     .settings-toggle { background-color: #444; border: 1px solid #666; color: #ffcc00; padding: 12px; font-size: 16px; font-weight: bold; width: 100%; max-width: 440px; border-radius: 10px; cursor: pointer; margin: 15px auto 5px auto; display: block; }
     .config-panel { max-width: 400px; margin: 0 auto; background: #2c2c2c; padding: 0 15px; border-radius: 12px; border: 1px solid #444; text-align: left; max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out, padding 0.3s ease-out; }
-    .config-panel.expanded { max-height: 480px; padding: 15px; }
+    .config-panel.expanded { max-height: 600px; padding: 15px; }
     .config-title { font-size: 16px; color: #ffcc00; font-weight: bold; margin-bottom: 15px; text-align: center; }
     .input-group { margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
     .input-group label { font-size: 14px; color: #bbb; }
@@ -36,19 +38,28 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
     .slider-round:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
     input:checked + .slider-round { background-color: #ffcc00; border-color: #ffcc00; }
     input:checked + .slider-round:before { transform: translateX(24px); background-color: #111; }
+    .telemetry-box { display: flex; justify-content: space-between; background: #1a1a1a; border: 1px solid #333; padding: 10px 15px; border-radius: 10px; margin-bottom: 15px; font-size: 13px; color: #aaa; }
+    .telemetry-item span { color: #ffcc00; font-weight: bold; }
   </style>
 </head>
 <body>
   <h2>Coffee table Controller</h2>
   <div class="container">
+    <div class="telemetry-box">
+      <div class="telemetry-item">State: <span id="telemetryState">---</span></div>
+      <div class="telemetry-item">Dir: <span id="telemetryDir">---</span></div>
+      <div class="telemetry-item">Live: <span id="telemetrySpeed">0</span>%</div>
+    </div>
     <div class="label">Target Speed: <span id="speedVal" class="value">0</span>%</div>
-    <!-- ADDED INTERACTION GATES: mousedown, mouseup, touchstart, and touchend clear the race condition -->
     <input type="range" min="0" max="100" value="0" class="slider" id="throttle" 
            oninput="updateSpeedValue(this.value)"
            onmousedown="startInteraction()" 
            onmouseup="endInteraction()"
            ontouchstart="startInteraction()" 
            ontouchend="endInteraction()">
+    <div>
+      <button class="default-btn" onclick="saveAsDefaultSpeed()">SET AS DEFAULT</button>
+    </div>
     <div>
       <button class="btn action-btn" onclick="startTrain()">START</button>
       <button class="btn action-btn" onclick="stopTrainSmoothly()">STOP</button>
@@ -63,7 +74,10 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
     </div>
     <button class="btn stop-btn" onclick="emergencyStop()">EMERGENCY STOP</button>
   </div>
+  
+  <!-- RESTORED: Settings panel toggle button wrapper position fixed cleanly -->
   <button class="settings-toggle" onclick="toggleSettingsMenu()">SETTINGS</button>
+  
   <div class="config-panel" id="settingsMenu">
     <div class="config-title">Momentum and Automation Fine-Tuning</div>
     <div class="input-group">
@@ -95,9 +109,11 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
     </div>
     <button class="update-btn" onclick="updatePhysicsSettings()">UPDATE CONFIGURATIONS</button>
   </div>
+
   <script>
     let isUserInteracting = false;
     let interactionTimeout = null;
+    let isInitialLoad = true; // NEW INTERLOCK: Track the very first network data sync pass
 
     function startInteraction() {
       isUserInteracting = true;
@@ -105,20 +121,37 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
     }
 
     function endInteraction() {
-      // Wait 1.5 seconds after lifting your finger to let the server process completely
       interactionTimeout = setTimeout(() => {
         isUserInteracting = false;
       }, 1500);
     }
 
     function fetchStatusUpdate() {
-      // FIXED BLOCK: Drops out instantly if your hand is currently dragging the throttle bar!
-      if (isUserInteracting) return;
-
       fetch('/status')
         .then(response => response.json())
         .then(data => {
-          if (isUserInteracting) return; // Guard double check
+          document.getElementById("telemetryState").innerText = data.state;
+          document.getElementById("telemetryDir").innerText = data.dir.toUpperCase();
+          document.getElementById("telemetrySpeed").innerText = data.current;
+
+          if (data.state === "EMERGENCY STOP") {
+            document.getElementById("telemetryState").style.color = "#cc0000";
+          } else if (data.state === "STOPPED") {
+            document.getElementById("telemetryState").style.color = "#888888";
+          } else {
+            document.getElementById("telemetryState").style.color = "#ffcc00";
+          }
+
+          // NEW INITIALIZATION GATE: Runs exactly once when you refresh or open the page!
+          if (isInitialLoad) {
+            isInitialLoad = false;
+            // Force the physical thumb handle slider position to match the hardware's active value
+            document.getElementById("throttle").value = data.target; 
+            // Force the big target speed text reading to update on screen layout
+            document.getElementById("speedVal").innerText = data.target; 
+          }
+
+          if (isUserInteracting) return; 
 
           if (data.ledState === 1) {
             document.getElementById("ledOnBtn").classList.add("active");
@@ -145,11 +178,9 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
         }).catch(err => console.error("Telemetry update loop dropped:", err));
     }
 
-    // Initial page load synchronization
     window.addEventListener("DOMContentLoaded", () => {
       fetchStatusUpdate();
-      // Runs cyclic loops every 1 second safely protected by our new interaction guard
-      setInterval(fetchStatusUpdate, 1000);
+      setInterval(fetchStatusUpdate, 1000); 
     });
 
     function updateSpeedValue(val) {
@@ -157,6 +188,12 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
       fetch('/saveselectpercent?val=' + val);
     }
     
+    function saveAsDefaultSpeed() {
+      fetch('/savedefaultspeed')
+        .then(response => { if(response.ok) alert("Current target speed saved as system boot default!"); })
+        .catch(err => console.error("Failed to commit default speed:", err));
+    }
+
     function startTrain() { fetch('/start'); }
     
     function toggleLed(state) {

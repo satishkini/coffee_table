@@ -20,7 +20,8 @@ bool readIRSensor();
 void switchOnboardLED(bool ledOn);
 
 void setOLEDLine1(const char* text);
-void setOLEDLine2(const char* text);
+//0 = Solid, 1 = Blinking, 2 = Reverse Light Block
+void setOLEDLine2(const char* text, uint8_t behavior = 0);
 
 
 #endif
