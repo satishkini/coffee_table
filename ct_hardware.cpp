@@ -20,7 +20,6 @@ static bool toggleState = false;
 
 extern int currentSpeed;
 extern bool isForward;
-extern volatile TrainConfig config;
 
 static void flushOLED() {
   display.clearDisplay();      

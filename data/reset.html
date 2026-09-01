@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Factory Reset</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #111; color: #fff; text-align: center; padding: 30px; }
+    .box { max-width: 350px; margin: 40px auto; background: #222; padding: 25px; border-radius: 12px; border: 2px solid #cc0000; box-shadow: 0 4px 15px rgba(204,0,0,0.2); }
+    h3 { color: #cc0000; margin-top: 0; font-size: 20px; } 
+    p { color: #aaa; font-size: 14px; line-height: 1.5; margin-bottom: 25px; }
+    .btn { display: inline-block; background: #cc0000; color: #fff; text-decoration: none; padding: 12px 25px; font-weight: bold; border-radius: 6px; margin: 10px 5px; cursor: pointer; transition: 0.2s; width: 80%; }
+    .btn:active { background: #990000; }
+    .btn-cancel { background: #444; color: #eee; width: 80%; }
+    .btn-cancel:active { background: #333; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h3>Warning: Factory Reset</h3>
+    <p>This action will permanently erase your saved Wi-Fi networks, physics parameters, and custom configuration registers.</p>
+    <a href="/clearflash?confirm=true" class="btn">CONFIRM HARD WIPE</a>
+    <a href="/" class="btn btn-cancel">CANCEL</a>
+  </div>
+</body>
+</html>

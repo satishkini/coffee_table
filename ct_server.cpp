@@ -1,12 +1,12 @@
 #include <Arduino.h>
 #include <WiFi.h>
-
+#include <WebServer.h>
+#include <LittleFS.h>
 #include <Preferences.h>
 #include "ct_server.h"
 #include "ct_hardware.h"   
 #include "ct_persistence.h"
 #include "ct_automation.h"
-#include "ct_index.h"
 
 WebServer server(80); 
 
@@ -16,16 +16,8 @@ unsigned long disconnectWindowStart = 0;
 int disconnectCounter               = 0;
 const int maxDisconnectAllowed      = 5; 
 
-extern int targetSpeed;
-extern int storedRunSpeed;
-extern int currentSpeed;
-extern bool isForward;
-extern TrainState currentState;
-
-unsigned long trackingTimeLimit;
-unsigned long connectionCheckInterval = 60000;  
-volatile bool isProcessingDisconnect = false;
-extern volatile TrainConfig config;
+unsigned long trackingTimeLimit       = 300000;
+unsigned long connectionCheckInterval = 60000; 
 
 bool ledState = false;
 bool displayConnectedTime = true;
@@ -34,13 +26,29 @@ bool enableDebug = false;
 bool isConfigPortalActive = false;
 unsigned long lastActiveIPTime = 0;
 
-bool isPendingDirectionFlip = true ;
-bool pendingDirection = true;
+bool isPendingDirectionFlip = false;
+bool pendingDirection       = true;
+
+static volatile bool isProcessingDisconnect = false; 
+
+extern int targetSpeed;
+extern int storedRunSpeed;
+extern int currentSpeed;
+extern bool isForward;
+extern TrainState currentState;
+extern volatile TrainConfig config;
+
 extern bool irTrippedActiveStop;
 
 void handleRootDashboard() {
-  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-  server.send_P(200, "text/html", HTML_PAGE); 
+  if (LittleFS.exists("/index.html")) {
+    File file = LittleFS.open("/index.html", "r");
+    server.sendHeader("Cache-Control", "public, max-age=31536000");
+    server.streamFile(file, "text/html");
+    file.close();
+  } else {
+    server.send(404, "text/plain", "Critical Error: index.html not found inside the flash memory partition.");
+  }
 }
 
 void handleStatusUpdate() {
@@ -188,17 +196,13 @@ void handleClearFlash() {
     delay(2000); 
     ESP.restart(); 
   } else {
-    String html = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1.0'>";
-    html += "<style>body{font-family:Arial;background:#111;color:#fff;text-align:center;padding:30px;}";
-    html += ".box{max-width:350px;margin:40px auto;background:#222;padding:25px;border-radius:12px;border:2px solid #cc0000;}";
-    html += "h3{color:#cc0000;margin-top:0;} p{color:#aaa;font-size:14px;line-height:1.5;}";
-    html += ".btn{display:inline-block;background:#cc0000;color:#fff;text-decoration:none;padding:12px 25px;font-weight:bold;border-radius:6px;margin:10px 5px;cursor:pointer;}";
-    html += ".btn-cancel{background:#444;color:#eee;}</style></head><body>";
-    html += "<div class='box'><h3>Warning: Factory Reset</h3>";
-    html += "<p>This action will permanently erase your saved Wi-Fi networks, physics parameters, and custom configuration registers.</p>";
-    html += "<a href='/clearflash?confirm=true' class='btn'>CONFIRM HARD WIPE</a>";
-    html += "<a href='/' class='btn btn-cancel'>CANCEL</a></div></body></html>";
-    server.send(200, "text/html", html);
+    if (LittleFS.exists("/reset.html")) {
+      File file = LittleFS.open("/reset.html", "r");
+      server.streamFile(file, "text/html");
+      file.close();
+    } else {
+      server.send(404, "text/plain", "Error: reset.html warning panel asset missing from Flash storage.");
+    }
   }
 }
 
@@ -247,16 +251,15 @@ void initServer() {
   server.begin();
   isProcessingDisconnect = false; 
 }
+
 void handlePortalRoot() {
-  String html = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1.0'>";
-  html += "<style>body{font-family:Arial;background:#111;color:#fff;text-align:center;padding:20px;}";
-  html += "input{display:block;width:80%;max-width:300px;margin:15px auto;padding:12px;background:#222;border:1px solid #444;color:#fff;border-radius:6px;}";
-  html += "button{background:#00adb5;color:#fff;border:none;padding:12px 30px;font-size:16px;font-weight:bold;border-radius:6px;cursor:pointer;}</style>";
-  html += "</head><body><h2>WiFi Setup Portal</h2><form action='/savewifi' method='GET'>";
-  html += "<input type='text' name='s' placeholder='WiFi SSID' required>";
-  html += "<input type='password' name='p' placeholder='WiFi Password'>";
-  html += "<button type='submit'>SAVE AND CONNECT</button></form></body></html>";
-  server.send(200, "text/html", html);
+  if (LittleFS.exists("/portal.html")) {
+    File file = LittleFS.open("/portal.html", "r");
+    server.streamFile(file, "text/html");
+    file.close();
+  } else {
+    server.send(404, "text/plain", "Error: portal.html configuration asset missing from Flash storage.");
+  }
 }
 
 void handlePortalSaveWifi() {
@@ -347,7 +350,7 @@ void handleNetworkDisconnections(unsigned long currentTime) {
   
   char disconnBuffer[DISPLAY_BUFFER_SIZE];
   snprintf(disconnBuffer, DISPLAY_BUFFER_SIZE , "DISCONN:%02u", disconnectCounter);
-  setOLEDLine2(disconnBuffer);
+  setOLEDLine2(disconnBuffer, 1);
     
   if (disconnectCounter >= maxDisconnectAllowed) {
     Serial.printf("[%lu ms] WATCHDOG THRESHOLD REACHED (%d failures). Executing clean emergency software reset...\n", millis(), disconnectCounter);
@@ -423,3 +426,5 @@ void processOnlineTime(unsigned long currentTime) {
     }
   }
 }
+
+

@@ -1,7 +1,3 @@
-#ifndef CT_INDEX_H
-#define CT_INDEX_H
-
-const char HTML_PAGE[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html>
 <head>
@@ -194,7 +190,23 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
         .catch(err => console.error("Failed to commit default speed:", err));
     }
 
-    function startTrain() { fetch('/start'); }
+    function startTrain() {
+      fetch('/start')
+        .then(response => {
+          if (response.ok) {
+            // Fetch a fresh status packet from the server the exact millisecond the train starts
+            fetch('/status')
+              .then(res => res.json())
+              .then(data => {
+                // Instantly snap the physical slider handle to the correct target percentage
+                document.getElementById("throttle").value = data.target;
+                // Instantly update the large target percentage text read-out
+                document.getElementById("speedVal").innerText = data.target;
+              });
+          }
+        })
+        .catch(err => console.error("Failed to execute start sequence synchronization:", err));
+    }
     
     function toggleLed(state) {
       if (state === 1) {
@@ -212,7 +224,18 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
       fetch('/setdebug?state=' + state).catch(err => console.error("Debug toggle failed:", err));
     }
     
-    function stopTrainSmoothly() { fetch('/smoothstop'); }
+    function stopTrainSmoothly() {
+      fetch('/smoothstop')
+        .then(response => {
+          if (response.ok) {
+            // Set the slider elements to zero to match the new incoming deceleration target
+            document.getElementById("throttle").value = 0;
+            document.getElementById("speedVal").innerText = 0;
+          }
+        })
+        .catch(err => console.error("Failed to execute smooth stop target synchronization:", err));
+    }
+
     
     function setDirection(dir) {
       if (dir === 'forward') {
@@ -247,6 +270,3 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
   </script>
 </body>
 </html>
-)rawliteral";
-
-#endif
