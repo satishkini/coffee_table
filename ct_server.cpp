@@ -26,8 +26,11 @@ extern volatile bool isProcessingDisconnect;
 extern volatile TrainConfig config;
 
 extern bool ledState;
+bool displayConnectedTime = true;
+bool enableDebug = false;
 
 bool isConfigPortalActive = false;
+unsigned long lastActiveIPTime = 0;
 
 void initServer() {
   isProcessingDisconnect = true; 
@@ -74,10 +77,12 @@ void initServer() {
     json += "\"step\":" + String(snap.rampStep) + ",";
     json += "\"interval\":" + String(snap.rampInterval) + ",";
     json += "\"wait\":" + String(snap.stationWaitDuration) + ",";
-    json += "\"cooldown\":" + String(snap.irCooldown);
+    json += "\"cooldown\":" + String(snap.irCooldown) + ",";
+    json += "\"debug\":" + String(enableDebug ? 1 : 0); // NEW: Maps runtime flag status back to UI slider
     json += "}";
     request->send(200, "application/json", json);
   });
+
 
   server.on("/saveselectpercent", WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     if (request->hasArg("val")) {
@@ -145,6 +150,15 @@ void initServer() {
     request->send(200, "text/plain", "Muted");
   });
 
+  server.on("/setdebug", WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
+    if (request->hasArg("state")) {
+      enableDebug = (request->arg("state").toInt() == 1);
+      enableConnectedTime(enableDebug);
+      Serial.printf("[%lu ms] System state parameters shifted: enableDebug = %s\n", millis(), enableDebug ? "TRUE" : "FALSE");
+    }
+    request->send(200, "text/plain", "Debug Target State Synced");
+  });
+  
   server.begin();
   isProcessingDisconnect = false; 
 }
@@ -157,11 +171,21 @@ void bootConfigPortal() {
   isConfigPortalActive = true; 
   
   WiFi.mode(WIFI_AP);
-  WiFi.softAP("Coffee-Table-Train"); 
+  WiFi.softAP("Coffee-Table"); 
   
   Serial.printf("[%lu ms] Configuration Portal Active. Open IP: ", millis());
   Serial.println(WiFi.softAPIP());
   setOLEDLine1("LOCAL AP");
+
+  Serial.println("[AP Mode] Waiting for a client device to connect to 'Coffee-Table-Train'...");
+  while (WiFi.softAPgetStationNum() == 0) {
+    delay(1000); // Check once per second to prevent CPU thrashing
+      
+    // Flash the display or status line to alert the user visually
+    static bool toggle = false;
+    toggle = !toggle;
+    setOLEDLine1(toggle ? "PAIR PHONE" : "LOCAL AP");
+  }
 
   server.on("/", WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request){
     String html = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1.0'>";
@@ -205,31 +229,49 @@ void processConnectionCheck(unsigned long currentTime) {
 
   if (currentTime - lastConnectionCheckTime >= connectionCheckInterval) {
     lastConnectionCheckTime = currentTime;
-    if (WiFi.status() != WL_CONNECTED && !isProcessingDisconnect && WiFi.getMode() == WIFI_STA) {
-      Serial.printf("[%lu ms] Network connection broken! Triggering automated reconnect...\n", currentTime);
+    
+    // --- BREAK THE DEADLOCK ENGINE ---
+    // If the radio is down, we do NOT care if isProcessingDisconnect is true.
+    // We actively force handleNetworkDisconnections to issue a brand new retry request!
+    if (WiFi.status() != WL_CONNECTED && WiFi.getMode() == WIFI_STA) {
+      Serial.printf("[%lu ms] System still offline. Issuing active 60s retry sweep...\n", currentTime);
+      
+      enableConnectedTime(false);
       setOLEDLine1("DISCONN");
+      
       handleNetworkDisconnections(currentTime);
+    } else if (WiFi.status() == WL_CONNECTED) {
+      // Clear all blocks immediately if everything is healthy
+      isProcessingDisconnect = false;
+      disconnectCounter = 0;
     }
   }
 }
 
+
 void handleNetworkDisconnections(unsigned long currentTime) {
   isProcessingDisconnect = true;
+  setOLEDLine1("RECONN");
   WiFi.reconnect(); 
 
   if (disconnectCounter == 0) {
     disconnectWindowStart = currentTime;
   }
   disconnectCounter++;
-  
+
   if (currentTime - disconnectWindowStart > trackingTimeLimit) {
     disconnectCounter = 1;
     disconnectWindowStart = currentTime;
   }
   
+  char disconnBuffer[DISPLAY_BUFFER_SIZE];
+  snprintf(disconnBuffer, DISPLAY_BUFFER_SIZE , "DISCONN:%02u", disconnectCounter);
+  setOLEDLine2(disconnBuffer);
+    
   if (disconnectCounter >= maxDisconnectAllowed) {
     Serial.printf("[%lu ms] WATCHDOG THRESHOLD REACHED (%d failures). Executing clean emergency software reset...\n", millis(), disconnectCounter);
     setOLEDLine1("NET WDT");
+    enableConnectedTime(false);
     delay(1000);
     ESP.restart();
   }
@@ -243,12 +285,15 @@ void WiFiEvent(WiFiEvent_t event) {
       Serial.println(WiFi.localIP());
       isProcessingDisconnect = false;
       setOLEDLine1("ONLINE");
+      enableConnectedTime(true);
+      lastActiveIPTime = now;
       break;
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
       if (!isProcessingDisconnect && WiFi.getMode() == WIFI_STA) {
         Serial.printf("[%lu ms] Asynchronous hardware drop frame. Triggering recovery...\n", now);
         setOLEDLine1("LINK LOST");
-        handleNetworkDisconnections(now);
+        enableConnectedTime(false);
+        isProcessingDisconnect = true; 
       }
       break;
     default:
@@ -258,4 +303,46 @@ void WiFiEvent(WiFiEvent_t event) {
 
 bool isNetworkLinkStable() {
   return (WiFi.status() == WL_CONNECTED && !isProcessingDisconnect);
+}
+
+void enableConnectedTime(bool enable) {
+  displayConnectedTime = enable;
+  
+  // IMMEDIATELY BLANK THE ROW IN MEMORY IF DISABLED
+  if (!displayConnectedTime) {
+    setOLEDLine2("");
+  }
+}
+
+
+void processOnlineTime(unsigned long currentTime) {
+  // Local static timestamp tracker confines memory allocation scope inside this loop
+  static unsigned long lastUptimeRefresh = 0;
+
+  if ( !enableDebug ) {
+    return;
+  }
+
+  // Non-blocking gate constraints slice execution loop exactly to 1-second intervals
+  if (currentTime - lastUptimeRefresh >= 1000) {
+    lastUptimeRefresh = currentTime;
+
+     if (displayConnectedTime && lastActiveIPTime > 0) {
+      unsigned long totalSeconds = (currentTime - lastActiveIPTime) / 1000;
+      unsigned int seconds = totalSeconds % 60;
+      unsigned int minutes = (totalSeconds / 60) % 60;
+      unsigned int hours   = (totalSeconds / 3600) % 24;
+      unsigned int days    = totalSeconds / 86400;
+
+      char uptimeBuffer[11];
+
+      if (days == 0) {
+        snprintf(uptimeBuffer, sizeof(uptimeBuffer), "%02uh%02um%02us", hours, minutes, seconds);
+      } else {
+        snprintf(uptimeBuffer, sizeof(uptimeBuffer), "%02ud%02uh%02us", days, hours, seconds);
+      }
+      
+      setOLEDLine2(uptimeBuffer);
+    }
+  }
 }

@@ -24,12 +24,18 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
     .stop-btn { background-color: #cc0000; border-color: #aa0000; width: 95%; font-size: 22px; padding: 20px; margin-top: 15px; }
     .settings-toggle { background-color: #444; border: 1px solid #666; color: #ffcc00; padding: 12px; font-size: 16px; font-weight: bold; width: 100%; max-width: 440px; border-radius: 10px; cursor: pointer; margin: 15px auto 5px auto; display: block; }
     .config-panel { max-width: 400px; margin: 0 auto; background: #2c2c2c; padding: 0 15px; border-radius: 12px; border: 1px solid #444; text-align: left; max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out, padding 0.3s ease-out; }
-    .config-panel.expanded { max-height: 400px; padding: 15px; }
+    .config-panel.expanded { max-height: 450px; padding: 15px; }
     .config-title { font-size: 16px; color: #ffcc00; font-weight: bold; margin-bottom: 15px; text-align: center; }
     .input-group { margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
     .input-group label { font-size: 14px; color: #bbb; }
     .input-group input { width: 90px; padding: 6px; background: #111; border: 1px solid #555; color: #fff; border-radius: 6px; text-align: center; font-size: 14px; }
     .update-btn { background-color: #00adb5; border: none; color: white; padding: 10px; font-size: 14px; font-weight: bold; width: 100%; border-radius: 8px; cursor: pointer; margin-top: 5px; }
+    .toggle-switch { position: relative; display: inline-block; width: 50px; height: 26px; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .slider-round { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #444; transition: .3s; border-radius: 34px; border: 1px solid #555; }
+    .slider-round:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
+    input:checked + .slider-round { background-color: #ffcc00; border-color: #ffcc00; }
+    input:checked + .slider-round:before { transform: translateX(24px); background-color: #111; }
   </style>
 </head>
 <body>
@@ -70,6 +76,13 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
       <label for="cooldownInput">IR Cooldown (1000-30000 ms):</label>
       <input type="number" id="cooldownInput" min="1000" max="30000" value="5000">
     </div>
+    <div class="input-group">
+      <label for="debugToggle">Enable Debug Telemetry:</label>
+      <label class="toggle-switch">
+        <input type="checkbox" id="debugToggle" onclick="toggleDebugMode(this.checked)">
+        <span class="slider-round"></span>
+      </label>
+    </div>
     <button class="update-btn" onclick="updatePhysicsSettings()">UPDATE CONFIGURATIONS</button>
   </div>
   <script>
@@ -97,6 +110,7 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
           document.getElementById("intervalInput").value = data.interval;
           document.getElementById("waitInput").value = data.wait;
           document.getElementById("cooldownInput").value = data.cooldown;
+          document.getElementById("debugToggle").checked = (data.debug === 1);
         }).catch(err => console.error("Handshake initialization sync failed:", err));
     });
 
@@ -116,6 +130,11 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
         document.getElementById("ledOnBtn").classList.remove("active");
       }
       fetch('/setled?state=' + state);
+    }
+    
+    function toggleDebugMode(checked) {
+      const state = checked ? 1 : 0;
+      fetch('/setdebug?state=' + state).catch(err => console.error("Debug toggle failed:", err));
     }
     
     function stopTrainSmoothly() { fetch('/smoothstop'); }

@@ -20,10 +20,11 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // --- NEW: CENTRAL SOFTWARE TEXT CACHE STORAGE ---
 // Holds up to 20 characters per row completely isolated in this file memory scope
-static char cacheLine1[11] = "STARTING  ";
-static char cacheLine2[11] = "          "; 
+static char cacheLine1[DISPLAY_BUFFER_SIZE] = "STARTING  ";
+static char cacheLine2[DISPLAY_BUFFER_SIZE] = "          "; 
 
 bool ledState = false ;
+
 
 static void flushOLED() {
   display.clearDisplay();      // Wipes the entire screen pixel grid instantly
@@ -81,45 +82,6 @@ void setOLEDLine2(const char* text) {
   
   flushOLED(); // Redraw the complete, synchronized two-line view
 }
-
-// ... [Keep your entire top section, caches, and public line setters completely identical] ...
-
-/**
- * @brief Computes system runtime values from hardware millisecond counters.
- * Updates the Line 2 text cache block once every 1000ms using a clean DD:HH:MM:SS array structure.
- */
-void processOLEDBacklightUptime(unsigned long currentTime) {
-  // Local static timestamp tracker confines memory allocation scope inside this loop
-  static unsigned long lastUptimeRefresh = 0;
-
-  // Non-blocking gate constraints slice execution loop exactly to 1-second intervals
-  if (currentTime - lastUptimeRefresh >= 1000) {
-    lastUptimeRefresh = currentTime;
-
-    // Calculate time metrics using standard modulo integer arithmetic
-    unsigned long totalSeconds = currentTime / 1000;
-    unsigned int seconds = totalSeconds % 60;
-    unsigned int minutes = (totalSeconds / 60) % 60;
-    unsigned int hours   = (totalSeconds / 3600) % 24;
-    unsigned int days    = totalSeconds / 86400;
-
-    // Format metrics into a precise 11-byte array container to guarantee bounds safety
-    char uptimeBuffer[11];
-    if(days == 0){
-      snprintf(uptimeBuffer, sizeof(uptimeBuffer), "%02uh%02um%02us", hours, minutes, seconds);
-   } else {
-    snprintf(uptimeBuffer, sizeof(uptimeBuffer), "%02ud%02uh%02us", days, hours, seconds);
-   }
-
-    // public assignment string copies directly into private cache rows and flushes screen
-    // Safely leaves Line 1 undisturbed while your Pi-hole network address handles remain visible!
-    strncpy(cacheLine2, uptimeBuffer, sizeof(cacheLine2) - 1);
-    cacheLine2[sizeof(cacheLine2) - 1] = '\0';
-    
-    flushOLED();
-  }
-}
-
 
 void applyTrackPower() {
   if (currentSpeed == 0) {

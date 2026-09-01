@@ -18,6 +18,7 @@ unsigned long connectionCheckInterval = 60000;
 
 volatile bool isProcessingDisconnect = false; 
 
+
 TrainState currentState = RUNNING;
 
 void setup() {
@@ -36,5 +37,5 @@ void loop() {
   processConnectionCheck(currentTime); // Tracks Wi-Fi connectivity states (Server tab)
   processAutomation(currentTime);      // Evaluates station sensor logic (Automation tab)
   processMomentum(currentTime);        // Computes speed adjustments (Automation tab)
-  processOLEDBacklightUptime(currentTime); 
+  processOnlineTime(currentTime); 
 }
