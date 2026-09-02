@@ -3,6 +3,9 @@
 #include <WebServer.h>
 #include <LittleFS.h>
 #include <Preferences.h>
+
+#include "ct_common.h" 
+#include "ct_train.h"
 #include "ct_server.h"
 #include "ct_hardware.h"   
 #include "ct_persistence.h"
@@ -10,7 +13,11 @@
 
 WebServer server(80); 
 
-int targetPercent = 0;
+static int targetPercent = 0;
+static bool displayConnectedTime = true;
+static bool enableDebug = false;
+static bool ledState;
+
 unsigned long lastConnectionCheckTime = 0;
 unsigned long disconnectWindowStart = 0;
 int disconnectCounter               = 0;
@@ -19,10 +26,6 @@ const int maxDisconnectAllowed      = 5;
 unsigned long trackingTimeLimit       = 300000;
 unsigned long connectionCheckInterval = 60000; 
 
-bool ledState = false;
-bool displayConnectedTime = true;
-bool enableDebug = false;
-
 bool isConfigPortalActive = false;
 unsigned long lastActiveIPTime = 0;
 
@@ -30,13 +33,6 @@ bool isPendingDirectionFlip = false;
 bool pendingDirection       = true;
 
 static volatile bool isProcessingDisconnect = false; 
-
-extern int targetSpeed;
-extern int storedRunSpeed;
-extern int currentSpeed;
-extern bool isForward;
-extern TrainState currentState;
-extern volatile TrainConfig config;
 
 extern bool irTrippedActiveStop;
 
@@ -52,35 +48,21 @@ void handleRootDashboard() {
 }
 
 void handleStatusUpdate() {
-  TrainConfig snap;
-  snap.rampStep             = config.rampStep;
-  snap.rampInterval         = config.rampInterval;
-  snap.stationWaitDuration  = config.stationWaitDuration;
-  snap.irCooldown           = config.irCooldown;
-  snap.minSpeedClamp        = config.minSpeedClamp;
-
-  String stateStr = "RUNNING";
-  if (currentState == STOPPED)            stateStr = "STOPPED";
-  else if (currentState == AT_STATION)    stateStr = "AT STATION";
-  else if (currentState == RAMPING_UP)    stateStr = "RAMPING UP";   
-  else if (currentState == RAMPING_DOWN)  stateStr = "RAMPING DOWN"; 
-  else if (currentState == EMERGENCY_STOP) stateStr = "EMERGENCY STOP";
-
-  int livePercent = map(currentSpeed, 0, 220, 0, 100);
-  if (currentSpeed == 0) livePercent = 0; 
+  int livePercent = map(train.getCurrentSpeed(), 0, 220, 0, 100);
+  if (train.getCurrentSpeed() == 0) livePercent = 0; 
 
   String json = "{";
   json += "\"ledState\":" + String(ledState ? 1 : 0) + ","; 
-  json += "\"dir\":\"" + String(isForward ? "forward" : "reverse") + "\",";
-  json += "\"step\":" + String(snap.rampStep) + ",";
-  json += "\"interval\":" + String(snap.rampInterval) + ",";
-  json += "\"wait\":" + String(snap.stationWaitDuration) + ",";
-  json += "\"cooldown\":" + String(snap.irCooldown) + ",";
-  json += "\"clamp\":" + String(snap.minSpeedClamp) + ",";
+  json += "\"dir\":\"" + String(train.isForward() ? "forward" : "reverse") + "\",";
+  json += "\"step\":" + String(train.getRampStep()) + ",";
+  json += "\"interval\":" + String(train.getRampInterval()) + ",";
+  json += "\"wait\":" + String(train.getStationWait()) + ",";
+  json += "\"cooldown\":" + String(environmentalIrCooldown) + ",";
+  json += "\"clamp\":" + String(train.getMinSpeedClamp()) + ",";
   json += "\"debug\":" + String(enableDebug ? 1 : 0) + ",";
-  json += "\"state\":\"" + stateStr + "\",";       
+  json += "\"state\":\"" + train.getStateString() + "\",";       
   json += "\"current\":" + String(livePercent) + ",";
-  json += "\"target\":" + String(targetPercent);     
+  json += "\"target\":" + String(train.getTargetPercent());     
   json += "}";
   server.send(200, "application/json", json);
 }
@@ -101,26 +83,28 @@ void handleSetLed() {
 }
 
 void handleSaveDefaultSpeed() {
-  config.defaultSpeed = targetPercent; 
-  saveTrainConfigToFlash(); 
+  train.setTargetPercent( targetPercent ); 
+  train.saveToFlash(); 
   server.send(200, "text/plain", "Default Speed Saved to Flash");
 }
 
 void handleStartTrain() {
-  if (currentState == EMERGENCY_STOP || currentState == STOPPED || currentState == AT_STATION) {
-    currentState = RAMPING_UP; 
+  CoffeeTableTrain::State currentState = train.getCurrentState();
+  if (currentState == CoffeeTableTrain::State::EMERGENCY_STOP || currentState == CoffeeTableTrain::State::STOPPED || currentState == CoffeeTableTrain::State::AT_STATION) {
+    train.setCurrentState ( CoffeeTableTrain::State::RAMPING_UP ); 
   }
-  targetSpeed = map(targetPercent, 0, 100, 0, 220); 
-  storedRunSpeed = targetSpeed; 
+  train.setTargetSpeed ( map(targetPercent, 0, 100, 0, 220) ); 
+  train.setStoredRunSpeed ( train.getTargetSpeed() ); 
   server.send(200, "text/plain", "Started");
 }
 
 void handleSmoothStop() {
-  if (currentState == RUNNING || currentState == RAMPING_UP) {
-    currentState = RAMPING_DOWN; 
+  CoffeeTableTrain::State currentState = train.getCurrentState();
+  if (currentState == CoffeeTableTrain::State::RUNNING || currentState == CoffeeTableTrain::State::RAMPING_UP) {
+    train.setCurrentState ( CoffeeTableTrain::State::RAMPING_DOWN ) ;
   }
   irTrippedActiveStop = false; 
-  targetSpeed = 0; 
+  train.setTargetSpeed ( 0 ); 
   server.send(200, "text/plain", "Smooth Stop Active");
 }
 
@@ -128,17 +112,18 @@ void handleSetDirection() {
   if (server.hasArg("dir")) {
     bool targetDir = (server.arg("dir") == "forward");
     
-    if (currentState == EMERGENCY_STOP) {
-      currentState = RUNNING;
+    CoffeeTableTrain::State currentState = train.getCurrentState();
+    if (currentState == CoffeeTableTrain::State::EMERGENCY_STOP) {
+      currentState = CoffeeTableTrain::State::RUNNING;
     }
 
-    if (currentSpeed > 0 && isForward != targetDir) {
+    if (train.getCurrentSpeed() > 0 && train.isForward() != targetDir) {
       isPendingDirectionFlip = true;
       pendingDirection = targetDir;
-      targetSpeed = 0; 
+      train.setTargetSpeed( 0 ) ; 
     } else {
-      isForward = targetDir;
-      targetSpeed = storedRunSpeed;
+      train.setForward ( targetDir );
+      train.setTargetSpeed( train.getStoredRunSpeed() ) ;
       applyTrackPower();
     }
   }
@@ -147,21 +132,21 @@ void handleSetDirection() {
 
 void handleUpdatePhysics() {
   if (server.hasArg("step") && server.hasArg("interval") && server.hasArg("wait") && server.hasArg("cooldown") && server.hasArg("clamp")) {
-    config.rampStep = server.arg("step").toInt();
-    config.rampInterval = server.arg("interval").toInt();
-    config.stationWaitDuration = server.arg("wait").toInt();
-    config.irCooldown = server.arg("cooldown").toInt();
-    config.minSpeedClamp = server.arg("clamp").toInt();
-    saveTrainConfigToFlash(); 
+    train.setRampStep( server.arg("step").toInt());
+    train.setRampInterval( server.arg("interval").toInt() );
+    train.setStationWait( server.arg("wait").toInt() );
+    environmentalIrCooldown = server.arg("cooldown").toInt();
+    train.setMinSpeedClamp( server.arg("clamp").toInt() );
+    train.saveToFlash(); 
   }
   server.send(200, "text/plain", "Saved");
 }
 
 void handleEmergencyStop() {
-  targetSpeed = 0;
-  storedRunSpeed = 0;
-  currentSpeed = 0; 
-  currentState = EMERGENCY_STOP; 
+  train.setTargetSpeed( 0 );
+  train.setStoredRunSpeed ( 0 );
+  train.setCurrentSpeed ( 0 ); 
+  train.setCurrentState ( CoffeeTableTrain::State::EMERGENCY_STOP ); 
   applyTrackPower();
   server.send(200, "text/plain", "Emergency Stop Executed");
 }
@@ -208,7 +193,7 @@ void handleClearFlash() {
 
 void initServer() {
   isProcessingDisconnect = true; 
-  targetPercent = config.defaultSpeed;
+  targetPercent = train.getDefaultSpeed();
 
   WiFi.onEvent(WiFiEvent);
   WiFi.mode(WIFI_STA); 
@@ -217,7 +202,9 @@ void initServer() {
   WiFi.setHostname("Coffee-Table"); 
 
   setOLEDLine1("CONNECTING");
-  WiFi.begin((const char*)config.wifiSSID, (const char*)config.wifiPASS);
+  loadWifiConfigfromFlash();
+
+  WiFi.begin((const char*)wificonfig.wifiSSID, (const char*)wificonfig.wifiPASS);
 
   unsigned long startTime = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - startTime < 15000) {
@@ -267,12 +254,12 @@ void handlePortalSaveWifi() {
     String newSSID = server.arg("s");
     String newPASS = server.hasArg("p") ? server.arg("p") : "";
     
-    memset((void*)&config.wifiSSID, 0, sizeof(config.wifiSSID));
-    memset((void*)&config.wifiPASS, 0, sizeof(config.wifiPASS));
-    strncpy((char*)&config.wifiSSID, newSSID.c_str(), sizeof(config.wifiSSID) - 1);
-    strncpy((char*)&config.wifiPASS, newPASS.c_str(), sizeof(config.wifiPASS) - 1);
+    memset((void*)&wificonfig.wifiSSID, 0, sizeof(wificonfig.wifiSSID));
+    memset((void*)&wificonfig.wifiPASS, 0, sizeof(wificonfig.wifiPASS));
+    strncpy((char*)&wificonfig.wifiSSID, newSSID.c_str(), sizeof(wificonfig.wifiSSID) - 1);
+    strncpy((char*)&wificonfig.wifiPASS, newPASS.c_str(), sizeof(wificonfig.wifiPASS) - 1);
     
-    saveTrainConfigToFlash(); 
+    saveWifiConfigToFlash(); 
     
     Serial.printf("[%lu ms] New credentials saved to Flash. Executing orderly clean software reset...\n", millis());
     
@@ -412,7 +399,7 @@ void processOnlineTime(unsigned long currentTime) {
   if (currentTime - lastUptimeRefresh >= 1000) {
     lastUptimeRefresh = currentTime;
 
-     if (displayConnectedTime && lastActiveIPTime > 0 && currentSpeed == 0) {
+     if (displayConnectedTime && lastActiveIPTime > 0 && train.getCurrentSpeed() == 0) {
       unsigned long totalSeconds = (currentTime - lastActiveIPTime) / 1000;
       
       unsigned int seconds = totalSeconds % 60;
@@ -427,4 +414,4 @@ void processOnlineTime(unsigned long currentTime) {
   }
 }
 
-
+bool isDebugEnabled() {return enableDebug ;}

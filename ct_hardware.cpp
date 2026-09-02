@@ -2,9 +2,12 @@
 #include <Wire.h>             
 #include <Adafruit_GFX.h>     
 #include <Adafruit_SSD1306.h> 
+#include "ct_common.h" 
+#include "ct_train.h"
 #include "ct_hardware.h"
 #include "ct_persistence.h" 
 #include "ct_server.h"
+
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 32
@@ -17,9 +20,6 @@ static char cacheLine2[DISPLAY_BUFFER_SIZE] = "          ";
 static uint8_t line2Behavior = 0; 
 static unsigned long lastOledToggle = 0;
 static bool toggleState = false;
-
-extern int currentSpeed;
-extern bool isForward;
 
 static void flushOLED() {
   display.clearDisplay();      
@@ -67,7 +67,7 @@ static void flushOLED() {
 
 void initHardware() {
   pinMode(LED_PIN, OUTPUT);
-  loadTrainConfigFromFlash();
+
   digitalWrite(LED_PIN, HIGH); 
 
   pinMode(SPEED_PIN, OUTPUT);
@@ -100,17 +100,17 @@ void setOLEDLine2(const char* text, uint8_t behavior) {
 }
 
 void applyTrackPower() {
-  if (currentSpeed == 0) {
+  if (train.getCurrentSpeed() == 0) {
     analogWrite(SPEED_PIN, 0);
     digitalWrite(DIR_PIN, LOW);
     return;
   }
-  if (isForward) {
+  if (train.isForward()) {
     digitalWrite(DIR_PIN, LOW);
-    analogWrite(SPEED_PIN, currentSpeed);
+    analogWrite(SPEED_PIN, train.getCurrentSpeed());
   } else {
     digitalWrite(DIR_PIN, HIGH);
-    analogWrite(SPEED_PIN, 255 - currentSpeed);
+    analogWrite(SPEED_PIN, 255 - train.getCurrentSpeed());
   }
 }
 

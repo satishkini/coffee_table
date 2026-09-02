@@ -1,39 +1,35 @@
 #include <Arduino.h>
-#include <Preferences.h> 
+#include <Preferences.h>
 #include "ct_persistence.h"
 
-extern volatile TrainConfig config;
+volatile WifiConfig wificonfig;
 
-void saveTrainConfigToFlash() {
-  Preferences prefs; 
-  prefs.begin("train-core", false);
-  prefs.putBytes("sysConfig", (const void*)&config, sizeof(TrainConfig));
+void saveWifiConfigToFlash() {
+  Preferences prefs;
+  prefs.begin("wifi-core", false);
+  prefs.putBytes("netConfig", (const void*)&wificonfig, sizeof(WifiConfig));
   prefs.end();
-  Serial.println("[Flash Layer] System configuration bytes atomically saved.");
+  Serial.printf("[%lu ms] WiFi structural credentials stored securely inside wifi-core.\n", millis());
 }
 
-void loadTrainConfigFromFlash() {
-  Preferences prefs; 
-  
-  prefs.begin("train-core", true);
-  
-  if (prefs.isKey("sysConfig")) {
-    prefs.getBytes("sysConfig", (void*)&config, sizeof(TrainConfig));
-    Serial.printf("[%lu ms] Structural system parameters successfully loaded.\n", millis());
-  } else {
-    Serial.printf("[%lu ms] No configurations found. Initializing safe baseline defaults...\n", millis());
-    config.rampInterval        = 15;
-    config.rampStep            = 2;
-    config.stationWaitDuration = 4000;
-    config.irCooldown          = 5000;
-    config.minSpeedClamp       = 35; 
-    config.defaultSpeed        = 40;
-    
-    memset((void*)config.wifiSSID, 0, sizeof(config.wifiSSID));
-    memset((void*)config.wifiPASS, 0, sizeof(config.wifiPASS));
+void loadWifiConfigfromFlash() {
+  Preferences prefs;
+  prefs.begin("wifi-core", true);
 
-    saveTrainConfigToFlash();
+  if (prefs.isKey("netConfig")) {
+    prefs.getBytes("netConfig", (void*)&wificonfig, sizeof(WifiConfig));
+    Serial.printf("[%lu ms] WiFi link parameters parsed successfully from flash memory.\n", millis());
+  } else {
+    Serial.printf("[%lu ms] No link configurations found. Generating system baseline defaults...\n", millis());
+    prefs.end();
+
+    memset((void*)&wificonfig.wifiSSID, 0, sizeof(wificonfig.wifiSSID));
+    memset((void*)&wificonfig.wifiPASS, 0, sizeof(wificonfig.wifiPASS));
+    strncpy((char*)&wificonfig.wifiSSID, "Canopus", sizeof(wificonfig.wifiSSID) - 1);
+    strncpy((char*)&wificonfig.wifiPASS, "YOUR_WIFI_PASSWORD", sizeof(wificonfig.wifiPASS) - 1);
+
+    saveWifiConfigToFlash();
+    return;
   }
-  
   prefs.end();
 }
