@@ -105,7 +105,9 @@
     </div>
     <button class="update-btn" onclick="updatePhysicsSettings()">UPDATE CONFIGURATIONS</button>
   </div>
-
+  <div style="text-align: center; margin-top: 30px; font-size: 12px; color: #555; font-family: sans-serif;">
+    Firmware Version: <span id="fwVersion" style="color: #00adb5; font-weight: bold;">---</span>
+  </div>
   <script>
     let isUserInteracting = false;
     let interactionTimeout = null;
@@ -171,6 +173,8 @@
           document.getElementById("cooldownInput").value = data.cooldown;
           document.getElementById("clampInput").value = data.clamp;
           document.getElementById("debugToggle").checked = (data.debug === 1);
+
+          document.getElementById("fwVersion").innerText = data.version;
         }).catch(err => console.error("Telemetry update loop dropped:", err));
     }
 

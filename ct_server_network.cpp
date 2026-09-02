@@ -3,6 +3,7 @@
 #include <WebServer.h>
 #include <LittleFS.h>
 #include <Preferences.h>
+#include <ElegantOTA.h> 
 
 #include "ct_common.h" 
 #include "ct_train.h"
@@ -241,6 +242,8 @@ void initServer() {
   server.on("/setledmode", HTTP_GET, handleSetLedMode);
   server.on("/setdebug", HTTP_GET, handleSetDebug);
   server.on("/clearflash", HTTP_GET, handleClearFlash);
+
+  ElegantOTA.begin(&server); 
   
   server.begin();
   isProcessingDisconnect = false; 

@@ -48,8 +48,8 @@ void handleStatusUpdate() {
   json += "\"debug\":" + String(enableDebug ? 1 : 0) + ",";
   json += "\"state\":\"" + train.getStateString() + "\",";       
   json += "\"current\":" + String(livePercent) + ",";
-  json += "\"target\":" + String(train.getTargetPercent());     
-  json += "}";
+  json += "\"target\":" + String(train.getTargetPercent()) + ","; 
+  json += "\"version\":\"" + String(COFFEE_TABLE_FIRMWARE_VERSION) + "\"";  json += "}";
   server.send(200, "application/json", json);
 }
 

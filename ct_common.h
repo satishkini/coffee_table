@@ -4,6 +4,9 @@
 #include <Arduino.h>
 #include "ct_server.h"
 
+#define COFFEE_TABLE_HARDWARE_VERSION "ESP32-C3 Train v1"
+#define COFFEE_TABLE_FIRMWARE_VERSION "0.0.5"
+
 #define DISPLAY_BUFFER_SIZE 11
 
 extern unsigned long environmentalIrCooldown; 
