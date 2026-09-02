@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <Preferences.h>
+#include "ct_common.h"
 #include "ct_persistence.h"
 
 volatile WifiConfig wificonfig;
@@ -9,18 +10,18 @@ void saveWifiConfigToFlash() {
   prefs.begin("wifi-core", false);
   prefs.putBytes("netConfig", (const void*)&wificonfig, sizeof(WifiConfig));
   prefs.end();
-  Serial.printf("[%lu ms] WiFi structural credentials stored securely inside wifi-core.\n", millis());
+  LOG_PRINTF("WiFi structural credentials stored securely inside wifi-core.\n");
 }
 
-void loadWifiConfigfromFlash() {
+void loadWifiConfigFromFlash() {
   Preferences prefs;
   prefs.begin("wifi-core", true);
 
   if (prefs.isKey("netConfig")) {
     prefs.getBytes("netConfig", (void*)&wificonfig, sizeof(WifiConfig));
-    Serial.printf("[%lu ms] WiFi link parameters parsed successfully from flash memory.\n", millis());
+    LOG_PRINTF("WiFi link parameters parsed successfully from flash memory.\n");
   } else {
-    Serial.printf("[%lu ms] No link configurations found. Generating system baseline defaults...\n", millis());
+    LOG_PRINTF("No link configurations found. Generating system baseline defaults...\n");
     prefs.end();
 
     memset((void*)&wificonfig.wifiSSID, 0, sizeof(wificonfig.wifiSSID));

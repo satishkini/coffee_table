@@ -2,7 +2,7 @@
 #include <LittleFS.h>
 #include <WebServer.h>
 
-#include "ct_common.h"     // NEW: Allocated cross-module variables instantiate cleanly
+#include "ct_common.h"     
 #include "ct_persistence.h"
 #include "ct_train.h" 
 #include "ct_automation.h" 
@@ -14,15 +14,13 @@ CoffeeTableTrain train;
 void setup() {
   Serial.begin(115200);
   delay(3000); 
-  Serial.printf("[%lu ms] System Initialization: Booting complete object-oriented framework...\n", millis());
+  LOG_PRINTF("System Initialization: Booting complete object-oriented framework...\n");
 
   if (!LittleFS.begin(true)) {
-    Serial.printf("[%lu ms] CRITICAL: LittleFS Flash Partition Mount Failed!\n", millis());
+    LOG_PRINTF("CRITICAL: LittleFS Flash Partition Mount Failed!\n");
   } else {
-    Serial.printf("[%lu ms] SUCCESS: LittleFS storage engine mounted cleanly.\n", millis());
+    LOG_PRINTF("SUCCESS: LittleFS storage engine mounted cleanly.\n");
   }
-
- 
 
   initHardware();
   initServer();

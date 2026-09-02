@@ -5,15 +5,15 @@
 #include "ct_persistence.h"
 #include "ct_train.h"
 
-static unsigned long lastRampTime = 0;
-static unsigned long stationStartTime = 0;
-static unsigned long lastIrTriggerTime = 0;
 bool irTrippedActiveStop = false;
+static unsigned long stationStartTime = 0;
 
 extern bool isPendingDirectionFlip;
 extern bool pendingDirection;
 
 void processAutomation(unsigned long currentTime) {
+  static unsigned long lastIrTriggerTime = 0;
+  
   if (train.getCurrentState() == CoffeeTableTrain::EMERGENCY_STOP) {
     return;
   }
@@ -40,14 +40,16 @@ void processAutomation(unsigned long currentTime) {
 }
 
 void processMomentum(unsigned long currentTime) {
-  displayStatus();
+  static unsigned long lastRampTime = 0;
 
   if (train.getCurrentState() == CoffeeTableTrain::EMERGENCY_STOP) {
+    displayStatus();
     return;
   }
 
   if (currentTime - lastRampTime >= train.getRampInterval()) {
     lastRampTime = currentTime;
+    displayStatus();
 
     if (train.getCurrentSpeed() != train.getTargetSpeed()) {
       if (train.getCurrentSpeed() < train.getTargetSpeed()) {
@@ -101,10 +103,16 @@ void processMomentum(unsigned long currentTime) {
   }
 }
 
-void   displayStatus() {
-  if(isDebugEnabled()) {
+void displayStatus() {
+  static unsigned long lastDisplay = 0;
+  unsigned long now = millis();
+
+  if(isDebugEnabled()  || now - lastDisplay < 200 ) {
     return;
   }
+
+  lastDisplay = now;
+
   String oledState = train.getStateShortString();
   uint8_t alertBehavior = 0;
 

@@ -9,20 +9,9 @@ struct WifiConfig {
 };
 
 void saveWifiConfigToFlash();
-void loadWifiConfigfromFlash();
+void loadWifiConfigFromFlash();
 
 extern volatile WifiConfig wificonfig;
 
 #endif
 
-/*
-struct TrainConfig {
-  unsigned long rampInterval;
-  int rampStep;
-  unsigned long stationWaitDuration;
-  unsigned long irCooldown;
-  char wifiSSID[33];
-  char wifiPASS[65];
-  int minSpeedClamp;
-  int defaultSpeed;
-};*/

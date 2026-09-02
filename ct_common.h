@@ -6,9 +6,6 @@
 
 #define DISPLAY_BUFFER_SIZE 11
 
-
-// --- NEW ENVIRONMENTAL CONFIGURATIONS ---
-// Hosted externally to decouple the layout track parameters from the train physics mechanics
 extern unsigned long environmentalIrCooldown; 
 
 #define LOG_PRINTF(format, ...) \

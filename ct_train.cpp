@@ -3,7 +3,6 @@
 #include "ct_train.h"
 #include "ct_common.h" 
 
-// Allocate the active environmental variable memory slot
 unsigned long environmentalIrCooldown = 5000; 
 
 CoffeeTableTrain::CoffeeTableTrain(): 
@@ -13,8 +12,6 @@ CoffeeTableTrain::CoffeeTableTrain():
     _minSpeedClamp(35), _defaultSpeed(40) { 
       loadFromFlash();
 }
-
-
 
 void CoffeeTableTrain::saveToFlash() {
   Preferences prefs;
@@ -26,11 +23,10 @@ void CoffeeTableTrain::saveToFlash() {
   prefs.putInt("speedClamp", _minSpeedClamp);
   prefs.putInt("defSpeed", _defaultSpeed);
   
-  // SECURE FLASH PIPELINE: Writes the environmental layout variable to preferences namespaces
   prefs.putULong("irCool", environmentalIrCooldown); 
   
   prefs.end();
-  Serial.printf("[%lu ms] Train behavior and environmental signatures updated.\n", millis());
+  LOG_PRINTF("Train behavior and environmental signatures updated.\n");
 }
 
 void CoffeeTableTrain::loadFromFlash() {
@@ -44,20 +40,19 @@ void CoffeeTableTrain::loadFromFlash() {
     _minSpeedClamp       = prefs.getInt("speedClamp");
     _defaultSpeed        = prefs.getInt("defSpeed");
     
-    // SECURE FLASH PIPELINE: Reads the environmental layout variable safely from memory blocks
     environmentalIrCooldown = prefs.getULong("irCool");
     _targetPercent = _defaultSpeed; 
     
-    Serial.printf("[%lu ms] System profiles successfully parsed from flash memory.\n", millis());
+    LOG_PRINTF("System profiles successfully parsed from flash memory.\n");
   } else {
-    Serial.printf("[%lu ms] Fresh silicon found. Committing class constructor defaults to Flash...\n", millis());
+    LOG_PRINTF("Fresh silicon found. Committing class constructor defaults to Flash...\n");
     prefs.end();
     
     _targetPercent = _defaultSpeed; 
-    environmentalIrCooldown = 5000; // Reset environmental fallback to 5 seconds
+    environmentalIrCooldown = 5000; 
     saveToFlash(); 
     return;
   }
   prefs.end();
-
 }
+
