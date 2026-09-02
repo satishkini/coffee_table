@@ -40,24 +40,7 @@ void processAutomation(unsigned long currentTime) {
 }
 
 void processMomentum(unsigned long currentTime) {
-  String oledState = train.getStateShortString();
-  uint8_t alertBehavior = 0;
-
-  if (train.getCurrentState() == CoffeeTableTrain::AT_STATION) {
-    alertBehavior = 1;
-  } else if (train.getCurrentState() == CoffeeTableTrain::EMERGENCY_STOP) {
-    alertBehavior = 2;
-  }
-
-  char oledDir = train.isForward() ? 'F' : 'R';
-  int displayPercent = map(train.getCurrentSpeed(), 0, 220, 0, 100);
-  if (train.getCurrentSpeed() == 0) displayPercent = 0;
-
-  char oledLine2Buffer[DISPLAY_BUFFER_SIZE];
-  snprintf(oledLine2Buffer, sizeof(oledLine2Buffer), "%s:%c:%03d",
-           oledState.c_str(), oledDir, displayPercent);
-
-  setOLEDLine2(oledLine2Buffer, alertBehavior);
+  displayStatus();
 
   if (train.getCurrentState() == CoffeeTableTrain::EMERGENCY_STOP) {
     return;
@@ -116,4 +99,34 @@ void processMomentum(unsigned long currentTime) {
       }
     }
   }
+}
+
+void   displayStatus() {
+  if(isDebugEnabled()) {
+    return;
+  }
+  String oledState = train.getStateShortString();
+  uint8_t alertBehavior = 0;
+
+  if (train.getCurrentState() == CoffeeTableTrain::AT_STATION || train.getCurrentState() == CoffeeTableTrain::STOPPED) {
+    alertBehavior = 1;
+  } else if (train.getCurrentState() == CoffeeTableTrain::EMERGENCY_STOP) {
+    alertBehavior = 2;
+  }
+
+  char oledDir = train.isForward() ? 'F' : 'R';
+  int displayPercent = map(train.getCurrentSpeed(), 0, 220, 0, 100);
+  if (train.getCurrentSpeed() == 0) displayPercent = 0;
+
+  if ( train.getCurrentState() == CoffeeTableTrain::EMERGENCY_STOP ) {
+    setOLEDLine2("  E-STOP  ", alertBehavior);
+  } else {
+      char oledLine2Buffer[DISPLAY_BUFFER_SIZE];
+      snprintf(oledLine2Buffer, sizeof(oledLine2Buffer), "%s:%c:%03d",
+             oledState.c_str(), oledDir, displayPercent);
+    setOLEDLine2(oledLine2Buffer, alertBehavior);
+          
+  }
+
+  
 }

@@ -5,5 +5,6 @@
 
 void processAutomation(unsigned long currentTime);
 void processMomentum(unsigned long currentTime);
+void displayStatus();
 
 #endif

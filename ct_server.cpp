@@ -18,16 +18,15 @@ static bool displayConnectedTime = true;
 static bool enableDebug = false;
 static bool ledState;
 
-unsigned long lastConnectionCheckTime = 0;
-unsigned long disconnectWindowStart = 0;
-int disconnectCounter               = 0;
-const int maxDisconnectAllowed      = 5; 
+static unsigned long lastConnectionCheckTime = 0;
+static unsigned long disconnectWindowStart = 0;
+static int disconnectCounter               = 0;
 
-unsigned long trackingTimeLimit       = 300000;
-unsigned long connectionCheckInterval = 60000; 
+static const int maxDisconnectAllowed      = 5; 
+static const unsigned long trackingTimeLimit       = 300000;
+static const unsigned long connectionCheckInterval = 60000; 
 
-bool isConfigPortalActive = false;
-unsigned long lastActiveIPTime = 0;
+static unsigned long lastActiveIPTime = 0;
 
 bool isPendingDirectionFlip = false;
 bool pendingDirection       = true;
@@ -90,17 +89,20 @@ void handleSaveDefaultSpeed() {
 
 void handleStartTrain() {
   CoffeeTableTrain::State currentState = train.getCurrentState();
-  if (currentState == CoffeeTableTrain::State::EMERGENCY_STOP || currentState == CoffeeTableTrain::State::STOPPED || currentState == CoffeeTableTrain::State::AT_STATION) {
+  if ( currentState == CoffeeTableTrain::State::EMERGENCY_STOP || 
+       currentState == CoffeeTableTrain::State::STOPPED || 
+       currentState == CoffeeTableTrain::State::AT_STATION) {
     train.setCurrentState ( CoffeeTableTrain::State::RAMPING_UP ); 
   }
   train.setTargetSpeed ( map(targetPercent, 0, 100, 0, 220) ); 
-  train.setStoredRunSpeed ( train.getTargetSpeed() ); 
+  train.setStoredRunSpeed ( targetPercent ); 
   server.send(200, "text/plain", "Started");
 }
 
 void handleSmoothStop() {
   CoffeeTableTrain::State currentState = train.getCurrentState();
-  if (currentState == CoffeeTableTrain::State::RUNNING || currentState == CoffeeTableTrain::State::RAMPING_UP) {
+  if ( currentState == CoffeeTableTrain::State::RUNNING || 
+       currentState == CoffeeTableTrain::State::RAMPING_UP) {
     train.setCurrentState ( CoffeeTableTrain::State::RAMPING_DOWN ) ;
   }
   irTrippedActiveStop = false; 
@@ -114,7 +116,7 @@ void handleSetDirection() {
     
     CoffeeTableTrain::State currentState = train.getCurrentState();
     if (currentState == CoffeeTableTrain::State::EMERGENCY_STOP) {
-      currentState = CoffeeTableTrain::State::RUNNING;
+      train.setCurrentState( CoffeeTableTrain::State::RUNNING );
     }
 
     if (train.getCurrentSpeed() > 0 && train.isForward() != targetDir) {
@@ -159,7 +161,7 @@ void handleSetDebug() {
   if (server.hasArg("state")) {
     enableDebug = (server.arg("state").toInt() == 1);
     enableConnectedTime(enableDebug);
-    Serial.printf("[%lu ms] System state parameters shifted: enableDebug = %s\n", millis(), enableDebug ? "TRUE" : "FALSE");
+    LOG_PRINTF("System state parameters shifted: enableDebug = %s\n", enableDebug ? "TRUE" : "FALSE");
   }
   server.send(200, "text/plain", "Debug Target State Synced");
 }
@@ -176,7 +178,7 @@ void handleClearFlash() {
     prefs.clear(); 
     prefs.end();
     
-    Serial.printf("[%lu ms] NVRAM wiped cleanly. Executing immediate software restart...\n", millis());
+    LOG_PRINTF("NVRAM wiped cleanly. Executing immediate software restart...\n");
     server.send(200, "text/plain", "Flash partitions cleared. Controller is resetting to factory default settings...");
     delay(2000); 
     ESP.restart(); 
@@ -209,13 +211,13 @@ void initServer() {
   unsigned long startTime = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - startTime < 15000) {
     delay(500);
-    Serial.print(".");
+    LOG_PRINTF(".");
   }
 
   if (WiFi.status() != WL_CONNECTED) {
     bootConfigPortal(); 
   } else {
-    Serial.printf("[%lu ms] Network ready. IP Address: ", millis());
+    LOG_PRINTF("Network ready. IP Address: %s\n", WiFi.localIP().toString().c_str());
     Serial.println(WiFi.localIP());
     setOLEDLine1("ONLINE");
 
@@ -261,7 +263,7 @@ void handlePortalSaveWifi() {
     
     saveWifiConfigToFlash(); 
     
-    Serial.printf("[%lu ms] New credentials saved to Flash. Executing orderly clean software reset...\n", millis());
+    LOG_PRINTF("New credentials saved to Flash. Executing orderly clean software reset...\n");
     
     server.send(200, "text/plain", "Credentials Saved. Rebooting train layout...");
     delay(2000);
@@ -272,20 +274,18 @@ void handlePortalSaveWifi() {
 }
 
 void bootConfigPortal() {
-  Serial.printf("[%lu ms] Handshake failed. Booting async local setup AP...\n", millis());
+  LOG_PRINTF("Handshake failed. Booting async local setup AP...\n");
   setOLEDLine1("NET FAIL");
   delay(1000);
-  
-  isConfigPortalActive = true; 
   
   WiFi.mode(WIFI_AP);
   WiFi.softAP("Coffee-Table"); 
   
-  Serial.printf("[%lu ms] Configuration Portal Active. Open IP: ", millis());
+  LOG_PRINTF("Configuration Portal Active. Open IP: ");
   Serial.println(WiFi.softAPIP());
   setOLEDLine1("LOCAL AP");
 
-  Serial.println("[AP Mode] Waiting for a client device to connect to 'Coffee-Table-Train'...");
+  LOG_PRINTF("[AP Mode] Waiting for a client device to connect to 'Coffee-Table-Train'...");
   while (WiFi.softAPgetStationNum() == 0) {
     delay(1000); 
       
@@ -307,7 +307,7 @@ void processConnectionCheck(unsigned long currentTime) {
     lastConnectionCheckTime = currentTime;
     
     if (WiFi.status() != WL_CONNECTED && WiFi.getMode() == WIFI_STA) {
-      Serial.printf("[%lu ms] System still offline. Issuing active 60s retry sweep...\n", currentTime);
+      LOG_PRINTF("System still offline. Issuing active 60s retry sweep...\n");
       
       enableConnectedTime(false);
       setOLEDLine1("DISCONN");
@@ -340,7 +340,7 @@ void handleNetworkDisconnections(unsigned long currentTime) {
   setOLEDLine2(disconnBuffer, 1);
     
   if (disconnectCounter >= maxDisconnectAllowed) {
-    Serial.printf("[%lu ms] WATCHDOG THRESHOLD REACHED (%d failures). Executing clean emergency software reset...\n", millis(), disconnectCounter);
+    LOG_PRINTF("WATCHDOG THRESHOLD REACHED (%d failures). Executing clean emergency software reset...\n", disconnectCounter);
     setOLEDLine1("NET WDT");
     enableConnectedTime(false);
     delay(1000);
@@ -352,7 +352,7 @@ void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   unsigned long now = millis();
   switch (event) {
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-      Serial.printf("[%lu ms] Obtained stable link allocation address via Pi-hole: ", now);
+      LOG_PRINTF("Obtained stable link allocation address via Pi-hole: ", now);
       Serial.println(WiFi.localIP());
       isProcessingDisconnect = false;
       setOLEDLine1("ONLINE");
@@ -362,7 +362,7 @@ void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
       if (!isProcessingDisconnect && WiFi.getMode() == WIFI_STA) {
         uint8_t reasonCode = info.wifi_sta_disconnected.reason;
-        Serial.printf("[%lu ms] Asynchronous hardware drop frame. Reason Code: %u\n", now, reasonCode);
+        LOG_PRINTF("Asynchronous hardware drop frame. Reason Code: %u\n", now, reasonCode);
         
         enableConnectedTime(false);
         

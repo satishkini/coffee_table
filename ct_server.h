@@ -34,6 +34,5 @@ void handlePortalSaveWifi();
 
 bool isDebugEnabled();
 
-extern unsigned long lastActiveIPTime;
 extern WebServer server;
 #endif
