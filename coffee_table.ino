@@ -40,6 +40,7 @@ void loop() {
   processDisplayUpdate(currentTime);
 
   server.handleClient();
+  ElegantOTA.loop();  
 
   processRebootTrigger(currentTime);
 }

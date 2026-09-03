@@ -23,7 +23,9 @@ static const unsigned long rebootDelayInterval = 3000;
 static unsigned long lastActiveIPTime = 0;
 static volatile bool isProcessingDisconnect = false;
 static bool displayConnectedTime = true;
-static bool shouldTriggerReboot = false;
+
+volatile bool shouldTriggerReboot = false;
+
 static bool isPortalInitialized = false;
 
 extern bool irTrippedActiveStop;
@@ -273,6 +275,7 @@ void initServer() {
   server.on("/setledmode", HTTP_GET, handleSetLedMode);
   server.on("/setdebug", HTTP_GET, handleSetDebug);
   server.on("/clearflash", HTTP_GET, handleClearFlash);
+  server.on("/triggerReboot", HTTP_GET, handleManualReboot);
 
   ElegantOTA.setAutoReboot(false);
 
@@ -284,7 +287,7 @@ void initServer() {
   });
 
   // 3. Hook into the END of the update
-    ElegantOTA.onEnd([](bool success) {
+  ElegantOTA.onEnd([](bool success) {
     shouldTriggerReboot = true; 
     if (success) {
       LOG_PRINTF("OTA Update Success! Deferred reset scheduled.\n");
@@ -294,7 +297,6 @@ void initServer() {
       setOLEDLine1("FAILED");
     }
   });
-
 
   ElegantOTA.begin(&server);
 

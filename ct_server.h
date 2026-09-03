@@ -29,6 +29,8 @@ void handleEmergencyStop();
 void handleSetLedMode();
 void handleSetDebug();
 void handleClearFlash();
+void handleManualReboot();
+
 
 void handlePortalRoot();
 void handlePortalSaveWifi();
@@ -38,4 +40,6 @@ bool isDebugEnabled();
 void processRebootTrigger(unsigned long currentTime);
 
 extern WebServer server;
+extern volatile bool shouldTriggerReboot;
+
 #endif

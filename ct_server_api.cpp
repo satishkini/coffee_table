@@ -194,4 +194,23 @@ void handleClearFlash() {
   }
 }
 
+void handleManualReboot() {
+  LOG_PRINTF("REMOTE DIAGNOSTICS: Manual system restart requested via dashboard UI...\n");
+  
+  // Cache clean warning text to RAM layouts cleanly (Sub-microsecond)
+  setOLEDLine1("SYSTEM  ");
+  setOLEDLine2("REBOOTING",1);
+
+  shouldTriggerReboot = true;
+
+  server.sendHeader("Location", "/");
+  server.sendHeader("Cache-Control", "no-cache");
+  
+  // 4. Send a 303 Redirect status code packet to trigger page relocation
+  server.send(303, "text/plain", "Rebooting...");
+
+  // Transmit instant confirmation response packet back to the client dashboard browser
+  server.send(200, "text/plain", "Reboot sequence armed. Resetting controller layout...");
+}
+
 bool isDebugEnabled() {return enableDebug ;}
