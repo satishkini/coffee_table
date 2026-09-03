@@ -34,7 +34,7 @@ void initHardware() {
   if(display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
     display.clearDisplay();
     display.display();
-    LOG_PRINTF("Peripheral registers online. I2C Display mapped to pins 8/9. UI Light on pin 6.\n");
+    LOG_DEBUG_PRINTF("Peripheral registers online. I2C Display mapped to pins 8/9. UI Light on pin 6.\n");
   }
 }
 
@@ -115,11 +115,4 @@ void applyTrackPower() {
   }
 }
 
-bool readIRSensor() {
-  return (digitalRead(IR_PIN) == LOW);
-}
 
-// Redirect method to drive the physical night light relay on GPIO 6 using active-low tracking
-void switchOnboardLED(bool ledOn){
-  digitalWrite(UI_LIGHT_PIN, ledOn ? LOW : HIGH);
-}

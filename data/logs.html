@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live System Telemetry Console</title>
+  <style>
+    body { background: #000; color: #00adb5; font-family: monospace; padding: 20px; margin: 0; }
+    h3 { color: #ffcc00; margin-top: 0; border-bottom: 1px solid #222; padding-bottom: 10px; font-size: 18px; }
+    pre { white-space: pre-wrap; word-wrap: break-word; font-size: 13px; line-height: 1.4; margin: 0; }
+  </style>
+</head>
+<body>
+  <h3>Z-Scale Engine Live Feed (Auto-Refreshing Tab)</h3>
+  <pre id="console">Initializing connection to ESP32-C3 train telemetry engine...<br></pre>
+  <----------------------------End of Logs------------------------------------------------->
+
+  <script>
+    // Non-blocking long-polling background thread running at 1.5s (1500ms)
+    setInterval(() => {
+      fetch('/logs?raw=true')
+        .then(response => response.text())
+        .then(text => {
+          if (text.length > 0) {
+            const consoleBox = document.getElementById('console');
+            consoleBox.innerText += text;
+            // Automatically snap window position down to view latest layout updates
+            window.scrollTo(0, document.body.scrollHeight);
+          }
+        })
+        .catch(err => console.error("Telemetry link lost:", err));
+    }, 1500);
+  </script>
+</body>
+</html>

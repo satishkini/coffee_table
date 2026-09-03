@@ -19,6 +19,7 @@ extern bool pendingDirection;
 void processAutomation(unsigned long currentTime) {
   static unsigned long lastIrTriggerTime = 0;
   
+  // Fast Guard Clause: Immediately abort if the system is in emergency stop
   if (train.getCurrentState() == CoffeeTableTrain::EMERGENCY_STOP) {
     return;
   }
@@ -34,7 +35,7 @@ void processAutomation(unsigned long currentTime) {
       // Calculate layout entry offset delay based on the active direction context
       activeDelayWindow = train.isForward() ? train.getForwardStationDelay() : train.getReverseStationDelay();
       
-      LOG_PRINTF("AUTOMATION: IR sensor tripped. Staging brake positioning window: %lu ms\n", activeDelayWindow);
+      LOG_DEBUG_PRINTF("AUTOMATION: IR sensor tripped. Staging brake positioning window: %lu ms\n", activeDelayWindow);
     }
   }
 
@@ -48,7 +49,7 @@ void processAutomation(unsigned long currentTime) {
         train.setCurrentState(CoffeeTableTrain::RAMPING_DOWN);
         train.setTargetSpeed(0);
         irTrippedActiveStop = true;
-        LOG_PRINTF("TRACTION: Positioning complete. Commencing station deceleration pattern.\n");
+        LOG_DEBUG_PRINTF("TRACTION: Positioning complete. Commencing station deceleration pattern.\n");
       }
     }
   }
@@ -56,12 +57,11 @@ void processAutomation(unsigned long currentTime) {
   // 3. Station Timer Management
   if (train.getCurrentState() == CoffeeTableTrain::AT_STATION) {
     if (currentTime - stationStartTime >= train.getStationWait()) {
-      // FIXED: Automatic direction inversion removed to prevent reverse loop derailments!
-      // The locomotive maintains its polarization context and continues moving forward along the loop.
+      // Automatic direction inversion removed to prevent reverse loop derailments!
       train.setTargetSpeed(train.getStoredRunSpeed());
       train.setCurrentState(CoffeeTableTrain::RAMPING_UP);
       
-      LOG_PRINTF("AUTOMATION: Station wait expired. Resuming loop trajectory. Target: %d\n", train.getStoredRunSpeed());
+      LOG_DEBUG_PRINTF("AUTOMATION: Station wait expired. Resuming loop trajectory. Target: %d\n", train.getStoredRunSpeed());
     }
   }
 }
@@ -74,72 +74,77 @@ void processMomentum(unsigned long currentTime) {
     return;
   }
 
-  // Physics calculation execution window step
-  if (currentTime - lastRampTime >= train.getRampInterval()) {
-    lastRampTime = currentTime;
-    displayStatus();
+  // OPTIMIZATION 2: Fast Inline Guard Clause
+  // Drops execution instantly if the physics update interval window hasn't expired yet.
+  // This saves CPU branch-prediction cycles and stops unnecessary calls down the stack.
+  if (currentTime - lastRampTime < train.getRampInterval()) {
+    return; 
+  }
+  
+  // Timing gate has officially opened: Commit the marker and update display cache registers
+  lastRampTime = currentTime;
+  displayStatus();
 
-    if (train.getCurrentSpeed() != train.getTargetSpeed()) {
+  if (train.getCurrentSpeed() != train.getTargetSpeed()) {
+    
+    // CASE 1: ACCELERATION (Smooth Linear Scale)
+    if (train.getCurrentSpeed() < train.getTargetSpeed()) {
+      if (train.getCurrentSpeed() == 0 && train.getTargetSpeed() > 0) {
+        // Hardened Anti-Hum Stiction Jump Filter
+        int clamp = train.getMinSpeedClamp();
+        train.setCurrentSpeed(clamp > train.getTargetSpeed() ? train.getTargetSpeed() : clamp);
+      } else {
+        train.setCurrentSpeed(train.getCurrentSpeed() + train.getRampStep());
+      }
       
-      // CASE 1: ACCELERATION (Smooth Linear Scale)
+      if (train.getCurrentSpeed() > train.getTargetSpeed()) {
+        train.setCurrentSpeed(train.getTargetSpeed());
+      }
+    } 
+    
+    // CASE 2: DECELERATION (Asymmetrical Braking for Precision Stopping)
+    else {
+      // Coreless Safety: Brake 2x faster than acceleration to prevent overshoot
+      int brakeStep = train.getRampStep() * 2; 
+      int nextSpeed = train.getCurrentSpeed() - brakeStep;
+      
+      if (train.getTargetSpeed() == 0 && nextSpeed <= train.getMinSpeedClamp()) {
+        train.setCurrentSpeed(0); // Cut voltage completely to eliminate low-voltage motor hum
+      } else {
+        train.setCurrentSpeed(nextSpeed);
+      }
+      
       if (train.getCurrentSpeed() < train.getTargetSpeed()) {
-        if (train.getCurrentSpeed() == 0 && train.getTargetSpeed() > 0) {
-          // Hardened Anti-Hum Stiction Jump Filter
-          int clamp = train.getMinSpeedClamp();
-          train.setCurrentSpeed(clamp > train.getTargetSpeed() ? train.getTargetSpeed() : clamp);
+        train.setCurrentSpeed(train.getTargetSpeed());
+      }
+    }
+
+    // Write newly computed speed adjustments down to the physical H-Bridge registers
+    applyTrackPower();
+
+    LOG_DEBUG_PRINTF("TRACTION: Speed: %d/220 | Target: %d | Profile: %s\n",
+               train.getCurrentSpeed(), train.getTargetSpeed(), train.getStateShortString().c_str());
+
+    // Evaluate State Machine Boundaries at Zero Speeds
+    if (train.getCurrentSpeed() == 0) {
+      if (isPendingDirectionFlip) {
+        isPendingDirectionFlip = false;
+        train.setForward(pendingDirection);
+        train.setTargetSpeed(train.getStoredRunSpeed());
+        train.setCurrentState(CoffeeTableTrain::RAMPING_UP);
+      } else if (train.getTargetSpeed() == 0) {
+        if (irTrippedActiveStop) {
+          train.setCurrentState(CoffeeTableTrain::AT_STATION);
+          irTrippedActiveStop = false;
+          stationStartTime = millis(); // Lock-in entry timestamp for station wait logic
         } else {
-          train.setCurrentSpeed(train.getCurrentSpeed() + train.getRampStep());
-        }
-        
-        if (train.getCurrentSpeed() > train.getTargetSpeed()) {
-          train.setCurrentSpeed(train.getTargetSpeed());
-        }
-      } 
-      
-      // CASE 2: DECELERATION (Asymmetrical Braking for Precision Stopping)
-      else {
-        // Coreless Safety: Brake 2x faster than acceleration to prevent overshoot
-        int brakeStep = train.getRampStep() * 2; 
-        int nextSpeed = train.getCurrentSpeed() - brakeStep;
-        
-        if (train.getTargetSpeed() == 0 && nextSpeed <= train.getMinSpeedClamp()) {
-          train.setCurrentSpeed(0); // Cut voltage completely to eliminate low-voltage motor hum
-        } else {
-          train.setCurrentSpeed(nextSpeed);
-        }
-        
-        if (train.getCurrentSpeed() < train.getTargetSpeed()) {
-          train.setCurrentSpeed(train.getTargetSpeed());
+          train.setCurrentState(CoffeeTableTrain::STOPPED);
+          irTrippedActiveStop = false;
         }
       }
-
-      // Write newly computed speed adjustments down to the physical H-Bridge registers
-      applyTrackPower();
-
-      LOG_PRINTF("TRACTION: Speed: %d/220 | Target: %d | Profile: %s\n",
-                 train.getCurrentSpeed(), train.getTargetSpeed(), train.getStateShortString().c_str());
-
-      // Evaluate State Machine Boundaries at Zero Speeds
-      if (train.getCurrentSpeed() == 0) {
-        if (isPendingDirectionFlip) {
-          isPendingDirectionFlip = false;
-          train.setForward(pendingDirection);
-          train.setTargetSpeed(train.getStoredRunSpeed());
-          train.setCurrentState(CoffeeTableTrain::RAMPING_UP);
-        } else if (train.getTargetSpeed() == 0) {
-          if (irTrippedActiveStop) {
-            train.setCurrentState(CoffeeTableTrain::AT_STATION);
-            irTrippedActiveStop = false;
-            stationStartTime = millis(); // Lock-in entry timestamp for station wait logic
-          } else {
-            train.setCurrentState(CoffeeTableTrain::STOPPED);
-            irTrippedActiveStop = false;
-          }
-        }
-      } else if (train.getCurrentSpeed() == train.getTargetSpeed()) {
-        if (train.getCurrentSpeed() > 0) {
-          train.setCurrentState(CoffeeTableTrain::RUNNING);
-        }
+    } else if (train.getCurrentSpeed() == train.getTargetSpeed()) {
+      if (train.getCurrentSpeed() > 0) {
+        train.setCurrentState(CoffeeTableTrain::RUNNING);
       }
     }
   }

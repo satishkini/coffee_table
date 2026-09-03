@@ -30,7 +30,7 @@ void CoffeeTableTrain::saveToFlash() {
   prefs.putULong("revDelay", _reverseStationDelay);
   
   prefs.end();
-  LOG_PRINTF("Train behavior and environmental signatures updated.\n");
+  LOG_TRACE_PRINTF("Train behavior and environmental signatures updated.\n");
 }
 
 void CoffeeTableTrain::loadFromFlash() {
@@ -51,9 +51,9 @@ void CoffeeTableTrain::loadFromFlash() {
     
     _targetPercent = _defaultSpeed; 
     
-    LOG_PRINTF("System profiles successfully parsed from flash memory.\n");
+    LOG_TRACE_PRINTF("System profiles successfully parsed from flash memory.\n");
   } else {
-    LOG_PRINTF("Fresh silicon found. Committing class constructor defaults to Flash...\n");
+    LOG_TRACE_PRINTF("Fresh silicon found. Committing class constructor defaults to Flash...\n");
     prefs.end();
     
     _targetPercent = _defaultSpeed; 

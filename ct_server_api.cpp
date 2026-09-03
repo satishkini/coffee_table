@@ -17,7 +17,6 @@ int targetPercent = 0;
 extern bool irTrippedActiveStop;
 
 static bool ledState;
-static bool enableDebug = false;
 
 bool isPendingDirectionFlip = false;
 bool pendingDirection       = true;
@@ -37,7 +36,10 @@ void handleStatusUpdate() {
   int livePercent = map(train.getCurrentSpeed(), 0, 220, 0, 100);
   if (train.getCurrentSpeed() == 0) livePercent = 0; 
 
-  String json = "{";
+  String json;
+  json.reserve(512); // Locks in enough contiguous memory up front
+
+  json = "{";
   json += "\"ledState\":" + String(ledState ? 1 : 0) + ","; 
   json += "\"dir\":\"" + String(train.isForward() ? "forward" : "reverse") + "\",";
   json += "\"step\":" + String(train.getRampStep()) + ",";
@@ -45,7 +47,7 @@ void handleStatusUpdate() {
   json += "\"wait\":" + String(train.getStationWait()) + ",";
   json += "\"cooldown\":" + String(environmentalIrCooldown) + ",";
   json += "\"clamp\":" + String(train.getMinSpeedClamp()) + ",";
-  json += "\"debug\":" + String(enableDebug ? 1 : 0) + ",";
+  json += "\"debug\":" + String(isDebugEnabled() ? 1 : 0) + ",";
   json += "\"state\":\"" + train.getStateString() + "\",";       
   json += "\"current\":" + String(livePercent) + ",";
   json += "\"target\":" + String(train.getTargetPercent()) + ","; 
@@ -155,16 +157,17 @@ void handleSetLedMode() {
 
 void handleSetDebug() {
   if (server.hasArg("state")) {
-    enableDebug = (server.arg("state").toInt() == 1);
-    enableConnectedTime(enableDebug);
-    LOG_PRINTF("System state parameters shifted: enableDebug = %s\n", enableDebug ? "TRUE" : "FALSE");
+    bool activeState = (server.arg("state").toInt() == 1);
+    setDebugEnabled(activeState);
+    enableConnectedTime(activeState);
+    LOG_DEBUG_PRINTF("SYSTEM CFG: Web debugging parameters shifted to %s\n", activeState ? "TRUE" : "FALSE");
   }
   server.send(200, "text/plain", "Debug Target State Synced");
 }
 
 void handleClearFlash() {
   if (server.hasArg("confirm") && server.arg("confirm") == "true") {
-    LOG_PRINTF("FACTORY RESET INITIALIZED: Wiping local configuration blocks...\n");
+    LOG_DEBUG_PRINTF("FACTORY RESET INITIALIZED: Wiping local configuration blocks...\n");
     enableConnectedTime(false);
     setOLEDLine1("FACTORY");
     setOLEDLine2("RESET   ");
@@ -178,10 +181,10 @@ void handleClearFlash() {
     prefs.clear();
     prefs.end();
     
-    LOG_PRINTF("NVRAM wiped cleanly. Executing immediate software restart...\n");
+    LOG_DEBUG_PRINTF("NVRAM wiped cleanly. Executing immediate software restart...\n");
     server.send(200, "text/plain", "Flash partitions cleared. Controller is resetting to factory default settings...");
 
-    //shouldTriggerReboot = true; 
+    reboot();
 
   } else {
     if (LittleFS.exists("/reset.html")) {
@@ -195,22 +198,48 @@ void handleClearFlash() {
 }
 
 void handleManualReboot() {
-  LOG_PRINTF("REMOTE DIAGNOSTICS: Manual system restart requested via dashboard UI...\n");
+  LOG_TRACE_PRINTF("REMOTE DIAGNOSTICS: Manual system restart requested via dashboard UI...\n");
   
-  // Cache clean warning text to RAM layouts cleanly (Sub-microsecond)
   setOLEDLine1("SYSTEM  ");
   setOLEDLine2("REBOOTING",1);
 
-  shouldTriggerReboot = true;
+  reboot();
 
   server.sendHeader("Location", "/");
   server.sendHeader("Cache-Control", "no-cache");
   
-  // 4. Send a 303 Redirect status code packet to trigger page relocation
   server.send(303, "text/plain", "Rebooting...");
 
-  // Transmit instant confirmation response packet back to the client dashboard browser
   server.send(200, "text/plain", "Reboot sequence armed. Resetting controller layout...");
 }
 
-bool isDebugEnabled() {return enableDebug ;}
+void handleGetLogs() {
+  // Check if this is an explicit browser tab request rather than a background UI pull
+  if (!server.hasArg("raw")) {
+    if (LittleFS.exists("/logs.html")) {
+      File file = LittleFS.open("/logs.html", "r");
+      // Instruct the browser to load the data context cleanly as a web view
+      server.streamFile(file, "text/html");
+      file.close();
+      
+      // Flash optimization: wipe any logs generated up to this point so the tab start fresh
+      clearCircularLog();
+      return;
+    } else {
+      server.send(404, "text/plain", "Critical Error: logs.html asset missing from Flash storage.");
+      return;
+    }
+  }
+
+  // Baseline standard handler block for background fetches (Dashboard or Long-Polling)
+  if (getCircularLogIndex() == 0) {
+    server.send(200, "text/plain", ""); // Return clean empty chunk if silent
+    return;
+  }
+  
+  // Directly transmit the static RAM cache chunk straight to the long-polling requester
+  server.send(200, "text/plain", getCircularLogBuffer());
+  
+  // Wipe and recycle the circular register contents instantly post-send
+  clearCircularLog();
+}

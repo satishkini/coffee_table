@@ -19,7 +19,7 @@ void saveWifiConfigToFlash() {
   prefs.putBytes("netConfig", &localConfig, sizeof(WifiConfig));
   prefs.end();
   
-  LOG_PRINTF("WiFi structural credentials stored securely inside wifi-core.\n");
+  LOG_TRACE_PRINTF("WiFi structural credentials stored securely inside wifi-core.\n");
 }
 
 void loadWifiConfigFromFlash() {
@@ -36,9 +36,9 @@ void loadWifiConfigFromFlash() {
     // Atomically copy the verified stack memory back to the volatile profile
     memcpy((void*)&wificonfig, &localConfig, sizeof(WifiConfig));
     
-    LOG_PRINTF("WiFi link parameters parsed successfully from flash memory.\n");
+    LOG_TRACE_PRINTF("WiFi link parameters parsed successfully from flash memory.\n");
   } else {
-    LOG_PRINTF("No link configurations found. Generating system baseline defaults...\n");
+    LOG_TRACE_PRINTF("No link configurations found. Generating system baseline defaults...\n");
     prefs.end();
 
     // Perform operations on stable, non-volatile stack memory without type-punning warnings

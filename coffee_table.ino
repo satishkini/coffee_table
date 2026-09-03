@@ -15,16 +15,23 @@ CoffeeTableTrain train;
 void setup() {
   Serial.begin(115200);
   delay(3000); 
-  LOG_PRINTF("System Initialization: Booting complete object-oriented framework...\n");
+  
+  LOG_TRACE_PRINTF("System Initialization: Booting complete object-oriented framework...\n");
 
   if (!LittleFS.begin(true)) {
-    LOG_PRINTF("CRITICAL: LittleFS Flash Partition Mount Failed!\n");
+    LOG_TRACE_PRINTF("CRITICAL: LittleFS Flash Partition Mount Failed!\n");
   } else {
-    LOG_PRINTF("SUCCESS: LittleFS storage engine mounted cleanly.\n");
+    LOG_TRACE_PRINTF("SUCCESS: LittleFS storage engine mounted cleanly.\n");
   }
 
   initHardware();
   initServer();
+
+  LOG_TRACE_PRINTF("BOOT_TRACE: Active system startup initialized. Reason Code: %d\n", getActiveRebootCode());
+  
+  clearActiveRebootCode(); 
+  
+  LOG_TRACE_PRINTF("System Status: Version %s execution loops active.\n" , COFFEE_TABLE_FIRMWARE_VERSION);
 }
 
 void loop() {

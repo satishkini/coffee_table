@@ -10,10 +10,12 @@
 
 #define UI_LIGHT_PIN 6 
 
+inline bool readIRSensor() { return (digitalRead(IR_PIN) == LOW); }
+
+inline void switchOnboardLED(bool ledOn){ digitalWrite(UI_LIGHT_PIN, ledOn ? LOW : HIGH); }
+
 void initHardware();
 void applyTrackPower();
-bool readIRSensor(); 
-void switchOnboardLED(bool ledOn);
 
 void setOLEDLine1(const char* text);
 //0 = Solid, 1 = Blinking, 2 = Reverse Light Block

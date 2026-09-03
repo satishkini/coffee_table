@@ -18,18 +18,18 @@ extern int targetPercent;
 static const int maxDisconnectAllowed = 5;
 static const unsigned long connectionCheckInterval = 60000;
 static const unsigned long trackingTimeLimit = 300000;
-static const unsigned long rebootDelayInterval = 3000;
+
 
 static unsigned long lastActiveIPTime = 0;
 static volatile bool isProcessingDisconnect = false;
 static bool displayConnectedTime = true;
 
-volatile bool shouldTriggerReboot = false;
-
 static bool isPortalInitialized = false;
 
 extern bool irTrippedActiveStop;
 extern volatile WifiConfig wificonfig;
+
+RTC_DATA_ATTR static int wifiConnectionStrikeCount = 0; 
 
 void handlePortalRoot() {
   if (LittleFS.exists("/portal.html")) {
@@ -53,11 +53,11 @@ void handlePortalSaveWifi() {
 
     saveWifiConfigToFlash();
 
-    LOG_PRINTF("New credentials saved to Flash. Executing orderly clean software reset...\n");
+    LOG_DEBUG_PRINTF("New credentials saved to Flash. Executing orderly clean software reset...\n");
 
     server.send(200, "text/plain", "Credentials Saved. Rebooting train layout...");
     
-    shouldTriggerReboot = true; 
+    reboot();
     
   } else {
     server.send(400, "text/plain", "Bad Request");
@@ -67,14 +67,14 @@ void handlePortalSaveWifi() {
 void bootConfigPortal() {
   if (isPortalInitialized) return; // Guard against multiple configurations
 
-  LOG_PRINTF("Handshake failed. Initializing non-blocking local setup AP...\n");
+  LOG_TRACE_PRINTF("Handshake failed. Initializing non-blocking local setup AP...\n");
   setOLEDLine1("NET FAIL");
 
   // Configure ESP32-C3 soft access point profile without blocking loops
   WiFi.mode(WIFI_AP);
   WiFi.softAP("Coffee-Table");
 
-  LOG_PRINTF("Configuration Portal Active. Open IP: %s\n", WiFi.softAPIP().toString().c_str());
+  LOG_TRACE_PRINTF("Configuration Portal Active. Open IP: %s\n", WiFi.softAPIP().toString().c_str());
   setOLEDLine1("LOCAL AP");
 
   // Register routing hooks to endpoint callback methods
@@ -84,7 +84,7 @@ void bootConfigPortal() {
   // Note: server.begin() is driven at the end of initServer()
   
   isPortalInitialized = true;
-  LOG_PRINTF("[AP Mode] Infrastructure online. Awaiting remote client device pairing...\n");
+  LOG_DEBUG_PRINTF("[AP Mode] Infrastructure online. Awaiting remote client device pairing...\n");
 }
 
 void processConfigPortal(unsigned long currentTime) {
@@ -108,7 +108,7 @@ void processConfigPortal(unsigned long currentTime) {
     // A device has connected to the AP layer; present steady configuration status
     static bool wasStationConnected = false;
     if (!wasStationConnected) {
-      LOG_PRINTF("[AP Mode] Remote device paired successfully. Awaiting portal web requests...\n");
+      LOG_DEBUG_PRINTF("[AP Mode] Remote device paired successfully. Awaiting portal web requests...\n");
       setOLEDLine1("PORTAL ACT");
       wasStationConnected = true;
     }
@@ -126,7 +126,7 @@ void processConnectionCheck(unsigned long currentTime) {
     lastConnectionCheckTime = currentTime;
 
     if (WiFi.status() != WL_CONNECTED && WiFi.getMode() == WIFI_STA) {
-      LOG_PRINTF("System still offline. Issuing active 60s retry sweep...\n");
+      LOG_DEBUG_PRINTF("System still offline. Issuing active 60s retry sweep...\n");
 
       enableConnectedTime(false);
       setOLEDLine1("DISCONN");
@@ -161,10 +161,10 @@ void handleNetworkDisconnections(unsigned long currentTime) {
   setOLEDLine2(disconnBuffer, 1);
 
   if (disconnectCounter >= maxDisconnectAllowed) {
-    LOG_PRINTF("WATCHDOG THRESHOLD REACHED (%d failures). Executing clean emergency software reset...\n", disconnectCounter);
+    LOG_DEBUG_PRINTF("WATCHDOG THRESHOLD REACHED (%d failures). Executing clean emergency software reset...\n", disconnectCounter);
     setOLEDLine1("NET WDT");
     enableConnectedTime(false);
-    shouldTriggerReboot = true; 
+    reboot();
 
   }
 }
@@ -173,7 +173,7 @@ void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   unsigned long now = millis();
   switch (event) {
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-      LOG_PRINTF("Obtained stable link allocation address via Pi-hole: %s\n", WiFi.localIP().toString().c_str());
+      LOG_TRACE_PRINTF("Obtained stable link allocation address via Pi-hole: %s\n", WiFi.localIP().toString().c_str());
       isProcessingDisconnect = false;
       setOLEDLine1("ONLINE");
       enableConnectedTime(true);
@@ -182,7 +182,7 @@ void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
       if (!isProcessingDisconnect && WiFi.getMode() == WIFI_STA) {
         uint8_t reasonCode = info.wifi_sta_disconnected.reason;
-        LOG_PRINTF("Asynchronous hardware drop frame. Reason Code: %u\n", reasonCode);
+        LOG_TRACE_PRINTF("Asynchronous hardware drop frame. Reason Code: %u\n", reasonCode);
 
         enableConnectedTime(false);
 
@@ -246,20 +246,38 @@ void initServer() {
   WiFi.setHostname("Coffee-Table");
 
   setOLEDLine1("CONNECTING");
+    
+  char bootMsgBuffer[DISPLAY_BUFFER_SIZE];
+  snprintf(bootMsgBuffer, sizeof(bootMsgBuffer), "TRY NET:%d", wifiConnectionStrikeCount + 1);
+  setOLEDLine2(bootMsgBuffer);
 
   WiFi.begin((const char*)wificonfig.wifiSSID, (const char*)wificonfig.wifiPASS);
 
   unsigned long startTime = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - startTime < 15000) {
     delay(500);
-    LOG_PRINTF(".\n");
+    LOG_DEBUG_PRINTF(".\n");
   }
 
-  if (WiFi.status() != WL_CONNECTED) {
-    bootConfigPortal();
-  } else {
-    LOG_PRINTF("Network ready. IP Address: %s\n", WiFi.localIP().toString().c_str());
+  if ( WiFi.status() != WL_CONNECTED ) {
+    wifiConnectionStrikeCount++;
+    if (wifiConnectionStrikeCount >= 3 || wificonfig.wifiSSID [0] == 0 ) {
+
+      wifiConnectionStrikeCount = 0; 
+      LOG_DEBUG_PRINTF("NET CRITICAL: 3 connection reboots exhausted. Falling back to local AP...\n");
+      bootConfigPortal();
+    } else {
+      LOG_DEBUG_PRINTF("NET WARN: Connection timed out (Strike %d/3). Issuing warm reset recovery...\n", wifiConnectionStrikeCount);
+      setOLEDLine2("RETRYING");
+      delay(500); 
+      ESP.restart();
+    }
+    
+  }  else {
+    wifiConnectionStrikeCount = 0; 
+    LOG_DEBUG_PRINTF("Network ready. IP Address: %s\n", WiFi.localIP().toString().c_str());
     setOLEDLine1("ONLINE");
+    setOLEDLine2("          ");
     server.on("/", HTTP_GET, handleRootDashboard);
   }
 
@@ -276,49 +294,37 @@ void initServer() {
   server.on("/setdebug", HTTP_GET, handleSetDebug);
   server.on("/clearflash", HTTP_GET, handleClearFlash);
   server.on("/triggerReboot", HTTP_GET, handleManualReboot);
+  server.on("/logs", HTTP_GET, handleGetLogs);
+
 
   ElegantOTA.setAutoReboot(false);
 
   ElegantOTA.onStart([]() {
-    LOG_PRINTF("OTA Update Started\n");
+    LOG_TRACE_PRINTF("OTA SYSTEM: Firmware download sequence initialized...\n");
 
     setOLEDLine1("OTA UPDATE");
     setOLEDLine2("Starting..");
   });
 
   // 3. Hook into the END of the update
-  ElegantOTA.onEnd([](bool success) {
-    shouldTriggerReboot = true; 
+ElegantOTA.onEnd([](bool success) {
     if (success) {
-      LOG_PRINTF("OTA Update Success! Deferred reset scheduled.\n");
-      setOLEDLine1("UPDATED");
+      LOG_TRACE_PRINTF("OTA SUCCESS: Image written safely. Arming deferred reset.\n");
+      setOLEDLine1("  UPDATED ");
+      setOLEDLine2("SUCCESS  ");
+      armDeferredReboot(REBOOT_CODE_OTA_SUCCESS); // <-- REPLACED WITH DESCRIPTIVE REBOOT CODE
     } else {
-      LOG_PRINTF("OTA Update Failed! Clean fallback scheduled.\n");
-      setOLEDLine1("FAILED");
+      LOG_TRACE_PRINTF("OTA CRITICAL: Image signature verification failed!\n");
+      setOLEDLine1(" FAILED!  ");
+      setOLEDLine2("RECOVERING");
+      armDeferredReboot(REBOOT_CODE_OTA_FAILED);  // <-- REPLACED WITH DESCRIPTIVE REBOOT CODE
     }
   });
+  const char* headerkeys[] = {"Accept", "User-Agent"};
+  server.collectHeaders(headerkeys, 2);
 
   ElegantOTA.begin(&server);
 
   server.begin();
   isProcessingDisconnect = false;
-}
-
-
-void processRebootTrigger(unsigned long currentTime) {
-  static unsigned long rebootTimerStart = 0;
-  static bool timerActive = false;
-
-  // Arms cleanly whether tripped by ElegantOTA updates or Factory Clear endpoints
-  if (shouldTriggerReboot && !timerActive) {
-    rebootTimerStart = currentTime;
-    timerActive = true;
-    LOG_PRINTF("Deferred Reboot Armed: Awaiting network buffer flush window...\n");
-  }
-
-  // Executes a deterministic cold reset after the safety window expires
-  if (timerActive && (currentTime - rebootTimerStart >= rebootDelayInterval)) {
-    LOG_PRINTF("Executing cold hardware reset sequence via deferred main-loop trigger.\n");
-    ESP.restart();
-  }
 }

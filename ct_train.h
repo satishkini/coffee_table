@@ -35,35 +35,35 @@ private:
 public:
   CoffeeTableTrain();
 
-  int getCurrentSpeed() const { return _currentSpeed; }
-  int getTargetSpeed() const { return _targetSpeed; }
-  int getStoredRunSpeed() const { return _storedRunSpeed; }
-  int getTargetPercent() const { return _targetPercent; }
-  bool isForward() const { return _isForward; }
-  State getCurrentState() const { return _currentState; }
+  inline int getCurrentSpeed() const { return _currentSpeed; }
+  inline int getTargetSpeed() const { return _targetSpeed; }
+  inline int getStoredRunSpeed() const { return _storedRunSpeed; }
+  inline int getTargetPercent() const { return _targetPercent; }
+  inline bool isForward() const { return _isForward; }
+  inline State getCurrentState() const { return _currentState; }
 
-  unsigned long getRampInterval() const { return _rampInterval; }
-  int getRampStep() const { return _rampStep; }
-  unsigned long getStationWait() const { return _stationWaitDuration; }
-  int getMinSpeedClamp() const { return _minSpeedClamp; }
-  int getDefaultSpeed() const { return _defaultSpeed; }
-  unsigned long getForwardStationDelay() const { return _forwardStationDelay; }
-  unsigned long getReverseStationDelay() const { return _reverseStationDelay; }
+  inline unsigned long getRampInterval() const { return _rampInterval; }
+  inline int getRampStep() const { return _rampStep; }
+  inline unsigned long getStationWait() const { return _stationWaitDuration; }
+  inline int getMinSpeedClamp() const { return _minSpeedClamp; }
+  inline int getDefaultSpeed() const { return _defaultSpeed; }
+  inline unsigned long getForwardStationDelay() const { return _forwardStationDelay; }
+  inline unsigned long getReverseStationDelay() const { return _reverseStationDelay; }
 
-  void setCurrentSpeed(int speed) { _currentSpeed = constrain(speed, 0, 220); }
-  void setTargetSpeed(int speed) { _targetSpeed = constrain(speed, 0, 220); }
-  void setStoredRunSpeed(int speed) { _storedRunSpeed = constrain(speed, 0, 220); }
-  void setTargetPercent(int percent) { _targetPercent = constrain(percent, 0, 100); }
-  void setForward(bool forward) { _isForward = forward; }
-  void setCurrentState(State state) { _currentState = state; }
+  inline void setCurrentSpeed(int speed) { _currentSpeed = constrain(speed, 0, 220); }
+  inline void setTargetSpeed(int speed) { _targetSpeed = constrain(speed, 0, 220); }
+  inline void setStoredRunSpeed(int speed) { _storedRunSpeed = constrain(speed, 0, 220); }
+  inline void setTargetPercent(int percent) { _targetPercent = constrain(percent, 0, 100); }
+  inline void setForward(bool forward) { _isForward = forward; }
+  inline void setCurrentState(State state) { _currentState = state; }
 
-  void setRampInterval(unsigned long ms) { _rampInterval = constrain(ms, 10, 500); }
-  void setRampStep(int step) { _rampStep = constrain(step, 1, 50); }
-  void setStationWait(unsigned long ms) { _stationWaitDuration = constrain(ms, 1000, 30000); }
-  void setMinSpeedClamp(int clamp) { _minSpeedClamp = constrain(clamp, 0, 100); }
-  void setDefaultSpeed(int speed) { _defaultSpeed = constrain(speed, 0, 100); }
-  void setForwardStationDelay(unsigned long ms) { _forwardStationDelay = constrain(ms, 0, 5000); }
-  void setReverseStationDelay(unsigned long ms) { _reverseStationDelay = constrain(ms, 0, 5000); }                
+  inline void setRampInterval(unsigned long ms) { _rampInterval = constrain(ms, 10, 500); }
+  inline void setRampStep(int step) { _rampStep = constrain(step, 1, 50); }
+  inline void setStationWait(unsigned long ms) { _stationWaitDuration = constrain(ms, 1000, 30000); }
+  inline void setMinSpeedClamp(int clamp) { _minSpeedClamp = constrain(clamp, 0, 100); }
+  inline void setDefaultSpeed(int speed) { _defaultSpeed = constrain(speed, 0, 100); }
+  inline void setForwardStationDelay(unsigned long ms) { _forwardStationDelay = constrain(ms, 0, 5000); }
+  inline void setReverseStationDelay(unsigned long ms) { _reverseStationDelay = constrain(ms, 0, 5000); }                
 
 
   String getStateString() const {
