@@ -7,6 +7,7 @@
 
 void initServer(); 
 void bootConfigPortal(); 
+void processConfigPortal(unsigned long currentTime);
 void processConnectionCheck(unsigned long currentTime);
 void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info);
 void handleNetworkDisconnections(unsigned long currentTime);
@@ -33,6 +34,8 @@ void handlePortalRoot();
 void handlePortalSaveWifi();
 
 bool isDebugEnabled();
+
+void processRebootTrigger(unsigned long currentTime);
 
 extern WebServer server;
 #endif

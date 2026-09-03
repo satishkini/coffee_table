@@ -27,7 +27,10 @@ private:
   int _rampStep;                      
   unsigned long _stationWaitDuration; 
   int _minSpeedClamp;                 
-  int _defaultSpeed;                  
+  int _defaultSpeed;  
+  unsigned long _forwardStationDelay;
+  unsigned long _reverseStationDelay;
+
 
 public:
   CoffeeTableTrain();
@@ -44,6 +47,8 @@ public:
   unsigned long getStationWait() const { return _stationWaitDuration; }
   int getMinSpeedClamp() const { return _minSpeedClamp; }
   int getDefaultSpeed() const { return _defaultSpeed; }
+  unsigned long getForwardStationDelay() const { return _forwardStationDelay; }
+  unsigned long getReverseStationDelay() const { return _reverseStationDelay; }
 
   void setCurrentSpeed(int speed) { _currentSpeed = constrain(speed, 0, 220); }
   void setTargetSpeed(int speed) { _targetSpeed = constrain(speed, 0, 220); }
@@ -57,6 +62,9 @@ public:
   void setStationWait(unsigned long ms) { _stationWaitDuration = constrain(ms, 1000, 30000); }
   void setMinSpeedClamp(int clamp) { _minSpeedClamp = constrain(clamp, 0, 100); }
   void setDefaultSpeed(int speed) { _defaultSpeed = constrain(speed, 0, 100); }
+  void setForwardStationDelay(unsigned long ms) { _forwardStationDelay = constrain(ms, 0, 5000); }
+  void setReverseStationDelay(unsigned long ms) { _reverseStationDelay = constrain(ms, 0, 5000); }                
+
 
   String getStateString() const {
     switch (_currentState) {

@@ -1,6 +1,7 @@
 #include <WiFi.h>
 #include <LittleFS.h>
 #include <WebServer.h>
+#include <ElegantOTA.h> 
 
 #include "ct_common.h"     
 #include "ct_persistence.h"
@@ -30,9 +31,15 @@ void loop() {
   unsigned long currentTime = millis();
 
   processConnectionCheck(currentTime); 
+  processConfigPortal(currentTime); 
+
   processAutomation(currentTime);      
   processMomentum(currentTime);        
   processOnlineTime(currentTime); 
   
+  processDisplayUpdate(currentTime);
+
   server.handleClient();
+
+  processRebootTrigger(currentTime);
 }

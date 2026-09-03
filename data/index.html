@@ -75,6 +75,13 @@
   <button class="settings-toggle" onclick="toggleSettingsMenu()">SETTINGS</button>
   
   <div class="config-panel" id="settingsMenu">
+    <div class="input-group">
+      <label for="debugToggle">Enable Debug Telemetry:</label>
+      <label class="toggle-switch">
+        <input type="checkbox" id="debugToggle" onclick="toggleDebugMode(this.checked)">
+        <span class="slider-round"></span>
+      </label>
+    </div>
     <div class="config-title">Momentum and Automation Fine-Tuning</div>
     <div class="input-group">
       <label for="stepInput">Ramp Step Size (1-50):</label>
@@ -97,11 +104,12 @@
       <input type="number" id="clampInput" min="0" max="100" value="14">
     </div>
     <div class="input-group">
-      <label for="debugToggle">Enable Debug Telemetry:</label>
-      <label class="toggle-switch">
-        <input type="checkbox" id="debugToggle" onclick="toggleDebugMode(this.checked)">
-        <span class="slider-round"></span>
-      </label>
+      <label for="fwdDelayInput">Forward Entry Delay (ms):</label>
+      <input type="number" id="fwdDelayInput" min="0" max="5000" value="500">
+    </div>
+    <div class="input-group">
+      <label for="revDelayInput">Reverse Entry Delay (ms):</label>
+      <input type="number" id="revDelayInput" min="0" max="5000" value="1200">
     </div>
     <button class="update-btn" onclick="updatePhysicsSettings()">UPDATE CONFIGURATIONS</button>
   </div>
@@ -173,6 +181,8 @@
           document.getElementById("cooldownInput").value = data.cooldown;
           document.getElementById("clampInput").value = data.clamp;
           document.getElementById("debugToggle").checked = (data.debug === 1);
+          document.getElementById("fwdDelayInput").value = data.fwdDelay;
+          document.getElementById("revDelayInput").value = data.revDelay;
 
           document.getElementById("fwVersion").innerText = data.version;
         }).catch(err => console.error("Telemetry update loop dropped:", err));
@@ -268,7 +278,10 @@
       const wait = document.getElementById("waitInput").value;
       const cooldown = document.getElementById("cooldownInput").value;
       const clamp = document.getElementById("clampInput").value;
-      fetch(`/updatephysics?step=${step}&interval=${interval}&wait=${wait}&cooldown=${cooldown}&clamp=${clamp}`)
+      const fwdDelay = document.getElementById("fwdDelayInput").value;
+      const revDelay = document.getElementById("revDelayInput").value;
+
+      fetch(`/updatephysics?step=${step}&interval=${interval}&wait=${wait}&cooldown=${cooldown}&clamp=${clamp}&fwdDelay=${fwdDelay}&revDelay=${revDelay}`)
         .then(response => { if(response.ok) alert("Configurations successfully updated and saved!"); });
     }
   </script>

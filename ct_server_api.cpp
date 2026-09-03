@@ -49,7 +49,10 @@ void handleStatusUpdate() {
   json += "\"state\":\"" + train.getStateString() + "\",";       
   json += "\"current\":" + String(livePercent) + ",";
   json += "\"target\":" + String(train.getTargetPercent()) + ","; 
-  json += "\"version\":\"" + String(COFFEE_TABLE_FIRMWARE_VERSION) + "\"";  json += "}";
+  json += "\"version\":\"" + String(COFFEE_TABLE_FIRMWARE_VERSION) + "\",";
+  json += "\"fwdDelay\":" + String(train.getForwardStationDelay()) + ",";
+  json += "\"revDelay\":" + String(train.getReverseStationDelay()) ;  
+  json += "}";
   server.send(200, "application/json", json);
 }
 
@@ -128,6 +131,10 @@ void handleUpdatePhysics() {
     train.setStationWait(server.arg("wait").toInt());
     environmentalIrCooldown = server.arg("cooldown").toInt();
     train.setMinSpeedClamp(server.arg("clamp").toInt());
+    
+    train.setForwardStationDelay(server.arg("fwdDelay").toInt());
+    train.setReverseStationDelay(server.arg("revDelay").toInt());
+    
     train.saveToFlash(); 
   }
   server.send(200, "text/plain", "Saved");
@@ -173,8 +180,9 @@ void handleClearFlash() {
     
     LOG_PRINTF("NVRAM wiped cleanly. Executing immediate software restart...\n");
     server.send(200, "text/plain", "Flash partitions cleared. Controller is resetting to factory default settings...");
-    delay(2000); 
-    ESP.restart(); 
+
+    //shouldTriggerReboot = true; 
+
   } else {
     if (LittleFS.exists("/reset.html")) {
       File file = LittleFS.open("/reset.html", "r");

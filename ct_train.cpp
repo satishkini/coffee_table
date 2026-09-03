@@ -9,7 +9,8 @@ CoffeeTableTrain::CoffeeTableTrain():
     _currentSpeed(0), _targetSpeed(0), _storedRunSpeed(0), _targetPercent(40), 
     _isForward(true), _currentState(STOPPED),
     _rampInterval(15), _rampStep(2), _stationWaitDuration(4000), 
-    _minSpeedClamp(35), _defaultSpeed(40) { 
+    _minSpeedClamp(35), _defaultSpeed(40),
+    _forwardStationDelay(500), _reverseStationDelay(1200) { 
       loadFromFlash();
 }
 
@@ -24,6 +25,9 @@ void CoffeeTableTrain::saveToFlash() {
   prefs.putInt("defSpeed", _defaultSpeed);
   
   prefs.putULong("irCool", environmentalIrCooldown); 
+
+  prefs.putULong("fwdDelay", _forwardStationDelay);
+  prefs.putULong("revDelay", _reverseStationDelay);
   
   prefs.end();
   LOG_PRINTF("Train behavior and environmental signatures updated.\n");
@@ -41,6 +45,10 @@ void CoffeeTableTrain::loadFromFlash() {
     _defaultSpeed        = prefs.getInt("defSpeed");
     
     environmentalIrCooldown = prefs.getULong("irCool");
+    
+    _forwardStationDelay = prefs.getULong("fwdDelay");
+    _reverseStationDelay = prefs.getULong("revDelay");
+    
     _targetPercent = _defaultSpeed; 
     
     LOG_PRINTF("System profiles successfully parsed from flash memory.\n");
